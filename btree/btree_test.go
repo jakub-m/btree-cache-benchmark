@@ -8,9 +8,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestInsertOne(t *testing.T) {
+	b := btree.New[int, int](2)
+	b.Insert(10, 42)
+	res := b.Find(10)
+	assert.NotNil(t, res)
+	assert.Equal(t, 42, *res)
+}
+
 func TestLotsOfSequentialInsertions(t *testing.T) {
 	n := 1000
 	for _, order := range []int{2, 3, 4, 10} {
+		order := order
 		t.Run(fmt.Sprintf("order %d", order), func(t *testing.T) {
 			t.Parallel()
 			b := btree.New[int, int](order)

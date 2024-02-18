@@ -1,5 +1,11 @@
 package btree
 
+import (
+	"fmt"
+	"io"
+	"strings"
+)
+
 type Btree[KeyT ~int, ValueT any] struct {
 	// The maximum number of child nodes of a node.
 	order int
@@ -101,7 +107,7 @@ func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value ValueT) {
 	assert(leaf.isLeaf(), "expected leaf for key %d", key)
 	// https://en.wikipedia.org/wiki/B-tree#Insertion
 	if b.isNodeFull(leaf) {
-		panic("todo")
+		leaf.insertToFullNode(key, value)
 	} else {
 		leaf.insertChildInOrder(key, value)
 	}
@@ -110,20 +116,30 @@ func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value ValueT) {
 // insertChildInOrder assumes there is space and there is no inserted item with `key`.
 func (n *node[KeyT, ValueT]) insertChildInOrder(key KeyT, value ValueT) {
 	assert(n.isLeaf(), "assumed leaf node")
+	insertAtIndex := 0
 	for i, child := range n.children {
 		childKv := child.(*keyValue[KeyT, ValueT])
 		assert(childKv.key != key, "the case that the equal key is in the tree should have been already handled: key=%d", key)
 		if childKv.key > key {
-			// Here is time to insert KV. Move all the values to the right. The capacity should be already there.
-			var curr, next *keyValue[KeyT, ValueT]
-			curr = &keyValue[KeyT, ValueT]{key: key, value: &value}
-			for j := i; j < len(n.children)+1; j++ {
-				next = n.children[j].(*keyValue[KeyT, ValueT])
-				n.children[j] = curr
-				curr = next
-			}
+			insertAtIndex = i
+			break
 		}
 	}
+	// Here is time to insert KV. Move all the values to the right. The capacity should be already there.
+	var curr, next *keyValue[KeyT, ValueT]
+	curr = &keyValue[KeyT, ValueT]{key: key, value: &value}
+	for i := insertAtIndex; i < len(n.children)+1; i++ {
+		if i < len(n.children) {
+			// don't crash on the last one.
+			next = n.children[i].(*keyValue[KeyT, ValueT])
+		}
+		n.children[i] = curr
+		curr = next
+	}
+}
+
+func (n *node[KeyT, ValueT]) insertToFullNode(key KeyT, value ValueT) {
+	panic("todo")
 }
 
 // isLeaf says if the node is a leaf node, that is, a node that's children are the pointers to the actually
@@ -139,4 +155,35 @@ func (b *Btree[KeyT, ValueT]) isNodeFull(n *node[KeyT, ValueT]) bool {
 
 func (b *Btree[KeyT, ValueT]) ValidityCheck() error {
 	return nil
+}
+
+func (b *Btree[KeyT, ValueT]) Print(w io.Writer) {
+	b.root.print(w, 0)
+}
+
+func (n *node[KeyT, ValueT]) print(w io.Writer, indent int) {
+	spaces := strings.Repeat(" ", indent)
+	fmt.Fprintf(w, "%schildren: %d isLeaf: %t\n", spaces, len(n.children), n.isLeaf())
+	if n.isLeaf() {
+		for _, child := range n.children {
+			kv := child.(*keyValue[KeyT, ValueT])
+			fmt.Fprintf(w, "%s[%d] %+v\n", spaces, kv.key, kv.value)
+		}
+	} else {
+		for i, key := range n.keys {
+			fmt.Fprintf(w, "%s%d", spaces, key)
+			if i < (len(n.keys) - 1) {
+				fmt.Fprintf(w, " | ")
+			}
+			fmt.Fprintf(w, "\n")
+			for _, child := range n.children {
+				n2 := child.(*node[KeyT, ValueT])
+				n2.print(w, indent+1)
+			}
+		}
+		for _, child := range n.children {
+			kv := child.(*keyValue[KeyT, ValueT])
+			fmt.Fprintf(w, "%s[%d] %+v\n", spaces, kv.key, kv.value)
+		}
+	}
 }
