@@ -3,6 +3,7 @@ package btree_test
 import (
 	"btree-cache-benchmark/btree"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,6 +15,28 @@ func TestInsertOne(t *testing.T) {
 	res := b.Find(10)
 	assert.NotNil(t, res)
 	assert.Equal(t, 42, *res)
+	b.Print(os.Stderr)
+}
+
+func TestInsertTwoOutOfOrder(t *testing.T) {
+	b := btree.New[int, int](2)
+	b.Insert(20, 120)
+	b.Insert(10, 110)
+	assert.NoError(t, b.ValidityCheck())
+	res := b.Find(10)
+	assert.NotNil(t, res)
+	assert.Equal(t, 110, *res)
+	b.Print(os.Stderr)
+}
+func TestInsertInOfOrder(t *testing.T) {
+	b := btree.New[int, int](2)
+	b.Insert(10, 110)
+	b.Insert(20, 120)
+	assert.NoError(t, b.ValidityCheck())
+	res := b.Find(10)
+	assert.NotNil(t, res)
+	assert.Equal(t, 110, *res)
+	b.Print(os.Stderr)
 }
 
 func TestLotsOfSequentialInsertions(t *testing.T) {

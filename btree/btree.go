@@ -46,7 +46,7 @@ type keyValue[KeyT ~int, ValueT any] struct {
 
 func New[KeyT ~int, ValueT any](order int) *Btree[KeyT, ValueT] {
 	root := node[KeyT, ValueT]{
-		children: make([]any, 0, order),
+		children: make([]any, order),
 		keys:     nil,
 	}
 	return &Btree[KeyT, ValueT]{
@@ -68,6 +68,9 @@ func (b *Btree[KeyT, ValueT]) Find(key KeyT) *ValueT {
 func (n *node[KeyT, ValueT]) findLeafNodeByKey(seekedKey KeyT) (*node[KeyT, ValueT], *keyValue[KeyT, ValueT]) {
 	if n.isLeaf() {
 		for _, c := range n.children {
+			if c == nil {
+				break
+			}
 			kv := c.(*keyValue[KeyT, ValueT])
 			if kv.key == seekedKey {
 				// Found.
@@ -106,41 +109,46 @@ func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value ValueT) {
 	}
 	assert(leaf.isLeaf(), "expected leaf for key %d", key)
 	// https://en.wikipedia.org/wiki/B-tree#Insertion
-	if b.isNodeFull(leaf) {
-		leaf.insertToFullNode(key, value)
-	} else {
-		leaf.insertChildInOrder(key, value)
-	}
+	//if b.isNodeFull(leaf) {
+	//	leaf.insertToFullNode(key, value)
+	//} else {
+	//	leaf.insertChildInOrder(key, value)
+	//}
+	leaf.insertChildInOrder(key, value)
+	// todo insert to full node
 }
 
 // insertChildInOrder assumes there is space and there is no inserted item with `key`.
 func (n *node[KeyT, ValueT]) insertChildInOrder(key KeyT, value ValueT) {
 	assert(n.isLeaf(), "assumed leaf node")
 	insertAtIndex := 0
-	for i, child := range n.children {
+	for _, child := range n.children {
+		if child == nil {
+			break
+		}
 		childKv := child.(*keyValue[KeyT, ValueT])
 		assert(childKv.key != key, "the case that the equal key is in the tree should have been already handled: key=%d", key)
 		if childKv.key > key {
-			insertAtIndex = i
 			break
 		}
+		insertAtIndex++
 	}
 	// Here is time to insert KV. Move all the values to the right. The capacity should be already there.
-	var curr, next *keyValue[KeyT, ValueT]
-	curr = &keyValue[KeyT, ValueT]{key: key, value: &value}
-	for i := insertAtIndex; i < len(n.children)+1; i++ {
-		if i < len(n.children) {
-			// don't crash on the last one.
-			next = n.children[i].(*keyValue[KeyT, ValueT])
-		}
+	var curr, next any
+
+	curr = n.children[insertAtIndex]
+	n.children[insertAtIndex] = &keyValue[KeyT, ValueT]{key: key, value: &value}
+
+	for i := insertAtIndex + 1; i < len(n.children); i++ {
+		next = n.children[i]
 		n.children[i] = curr
 		curr = next
 	}
 }
 
-func (n *node[KeyT, ValueT]) insertToFullNode(key KeyT, value ValueT) {
-	panic("todo")
-}
+//func (n *node[KeyT, ValueT]) insertToFullNode(key KeyT, value ValueT) {
+//	panic("todo")
+//}
 
 // isLeaf says if the node is a leaf node, that is, a node that's children are the pointers to the actually
 // stored values.
@@ -148,12 +156,43 @@ func (n *node[KeyT, ValueT]) isLeaf() bool {
 	return n.keys == nil
 }
 
-func (b *Btree[KeyT, ValueT]) isNodeFull(n *node[KeyT, ValueT]) bool {
-	assert(len(n.children) <= b.order, "too much child nodes")
-	return len(n.children) == b.order
-}
+//func (b *Btree[KeyT, ValueT]) isNodeFull(n *node[KeyT, ValueT]) bool {
+//	assert(len(n.children) <= b.order, "too much child nodes")
+//	return len(n.children) == b.order
+//}
 
 func (b *Btree[KeyT, ValueT]) ValidityCheck() error {
+	check := func(n *node[KeyT, ValueT]) error {
+		if n.isLeaf() {
+			var prevKey *KeyT
+			for _, child := range n.children {
+				kv := child.(*keyValue[KeyT, ValueT])
+				if prevKey != nil {
+					if !(*prevKey < kv.key) {
+						return fmt.Errorf("for a child, prev key=%d, next key=%d", *prevKey, kv.key)
+					}
+				}
+				prevKey = &kv.key
+			}
+		}
+		return nil
+	}
+	return b.root.runRecursiveUntilError(check)
+}
+
+func (n *node[KeyT, ValueT]) runRecursiveUntilError(fun func(n *node[KeyT, ValueT]) error) error {
+	if err := fun(n); err != nil {
+		return err
+	}
+	for _, child := range n.children {
+		if child != nil {
+			if n2, ok := child.(*node[KeyT, ValueT]); ok {
+				if err := n2.runRecursiveUntilError(fun); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -165,9 +204,13 @@ func (n *node[KeyT, ValueT]) print(w io.Writer, indent int) {
 	spaces := strings.Repeat(" ", indent)
 	fmt.Fprintf(w, "%schildren: %d isLeaf: %t\n", spaces, len(n.children), n.isLeaf())
 	if n.isLeaf() {
-		for _, child := range n.children {
-			kv := child.(*keyValue[KeyT, ValueT])
-			fmt.Fprintf(w, "%s[%d] %+v\n", spaces, kv.key, kv.value)
+		for i, child := range n.children {
+			if child == nil {
+				fmt.Fprintf(w, "%s[%d:nil] nil\n", spaces, i)
+			} else {
+				kv := child.(*keyValue[KeyT, ValueT])
+				fmt.Fprintf(w, "%s[%d:%d] %s\n", spaces, i, kv.key, fmt.Sprint(kv.value))
+			}
 		}
 	} else {
 		for i, key := range n.keys {
@@ -183,7 +226,7 @@ func (n *node[KeyT, ValueT]) print(w io.Writer, indent int) {
 		}
 		for _, child := range n.children {
 			kv := child.(*keyValue[KeyT, ValueT])
-			fmt.Fprintf(w, "%s[%d] %+v\n", spaces, kv.key, kv.value)
+			fmt.Fprintf(w, "%s[k:%d] %s\n", spaces, kv.key, fmt.Sprint(kv.value))
 		}
 	}
 }
