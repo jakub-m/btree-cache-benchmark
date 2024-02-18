@@ -1,11 +1,9 @@
 package btree
 
-type KeyT int
-
-type Btree struct {
+type Btree[KeyT ~int, ValueT any] struct {
 	// The maximum number of child nodes of a node.
 	order int
-	root  *node
+	root  *node[KeyT, ValueT]
 }
 
 // node per Knuth (wiki, m is order):
@@ -25,7 +23,7 @@ type Btree struct {
 // The leaf nodes are the nodes that hold only "items". The item is the actual item that was inserted
 // in the Btree itself.
 // The leaf nodes have children (the items), but do not have keys.
-type node struct {
+type node[KeyT ~int, ValueT any] struct {
 	// children nodes, either internal nodes, or the actually inserted items (keyValue structures).
 	children []any
 	// keys separte children. There are len(children) - 1 keys at any moments.
@@ -35,23 +33,23 @@ type node struct {
 }
 
 // keyValue is the struct that is
-type keyValue struct {
+type keyValue[KeyT ~int, ValueT any] struct {
 	key   KeyT
-	value any
+	value *ValueT
 }
 
-func New(order int) *Btree {
-	root := node{
+func New[KeyT ~int, ValueT any](order int) *Btree[KeyT, ValueT] {
+	root := node[KeyT, ValueT]{
 		children: make([]any, 0, order),
 		keys:     nil,
 	}
-	return &Btree{
+	return &Btree[KeyT, ValueT]{
 		order: order,
 		root:  &root,
 	}
 }
 
-func (b *Btree) Find(key KeyT) any {
+func (b *Btree[KeyT, ValueT]) Find(key KeyT) *ValueT {
 	if _, keyValue := b.root.findLeafNodeByKey(key); keyValue == nil {
 		return nil
 	} else {
@@ -61,10 +59,10 @@ func (b *Btree) Find(key KeyT) any {
 
 // findLeafNodeByKey returns the leaf node that holds the value with seeked key, or the one that should
 // hold such a value if it doesn't.
-func (n *node) findLeafNodeByKey(seekedKey KeyT) (*node, *keyValue) {
+func (n *node[KeyT, ValueT]) findLeafNodeByKey(seekedKey KeyT) (*node[KeyT, ValueT], *keyValue[KeyT, ValueT]) {
 	if n.isLeaf() {
 		for _, c := range n.children {
-			kv := c.(*keyValue)
+			kv := c.(*keyValue[KeyT, ValueT])
 			if kv.key == seekedKey {
 				// Found.
 				return n, kv
@@ -84,22 +82,26 @@ func (n *node) findLeafNodeByKey(seekedKey KeyT) (*node, *keyValue) {
 		for i, separatorKey := range n.keys {
 			if separatorKey > seekedKey {
 				// Too far, use the previous range (node).
-				child := n.children[i].(*node)
+				child := n.children[i].(*node[KeyT, ValueT])
 				return child.findLeafNodeByKey(seekedKey)
 			}
 		}
 		// Reached the last range.
-		child := n.children[len(n.children)-1].(*node)
+		child := n.children[len(n.children)-1].(*node[KeyT, ValueT])
 		return child.findLeafNodeByKey(seekedKey)
 	}
 }
 
 // isLeaf says if the node is a leaf node, that is, a node that's children are the pointers to the actually
 // stored values.
-func (n *node) isLeaf() bool {
+func (n *node[KeyT, ValueT]) isLeaf() bool {
 	return n.keys == nil
 }
 
-func (b *Btree) Insert[T ~KeyT](key T, value any) {
+func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value any) {
 
+}
+
+func (b *Btree[KeyT, ValueT]) ValidityCheck() error {
+	return nil
 }
