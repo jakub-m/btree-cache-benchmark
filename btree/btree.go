@@ -92,14 +92,49 @@ func (n *node[KeyT, ValueT]) findLeafNodeByKey(seekedKey KeyT) (*node[KeyT, Valu
 	}
 }
 
+func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value ValueT) {
+	leaf, kv := b.root.findLeafNodeByKey(key)
+	if kv != nil {
+		kv.value = &value
+		return
+	}
+	assert(leaf.isLeaf(), "expected leaf for key %d", key)
+	// https://en.wikipedia.org/wiki/B-tree#Insertion
+	if b.isNodeFull(leaf) {
+		panic("todo")
+	} else {
+		leaf.insertChildInOrder(key, value)
+	}
+}
+
+// insertChildInOrder assumes there is space and there is no inserted item with `key`.
+func (n *node[KeyT, ValueT]) insertChildInOrder(key KeyT, value ValueT) {
+	assert(n.isLeaf(), "assumed leaf node")
+	for i, child := range n.children {
+		childKv := child.(*keyValue[KeyT, ValueT])
+		assert(childKv.key != key, "the case that the equal key is in the tree should have been already handled: key=%d", key)
+		if childKv.key > key {
+			// Here is time to insert KV. Move all the values to the right. The capacity should be already there.
+			var curr, next *keyValue[KeyT, ValueT]
+			curr = &keyValue[KeyT, ValueT]{key: key, value: &value}
+			for j := i; j < len(n.children)+1; j++ {
+				next = n.children[j].(*keyValue[KeyT, ValueT])
+				n.children[j] = curr
+				curr = next
+			}
+		}
+	}
+}
+
 // isLeaf says if the node is a leaf node, that is, a node that's children are the pointers to the actually
 // stored values.
 func (n *node[KeyT, ValueT]) isLeaf() bool {
 	return n.keys == nil
 }
 
-func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value any) {
-
+func (b *Btree[KeyT, ValueT]) isNodeFull(n *node[KeyT, ValueT]) bool {
+	assert(len(n.children) <= b.order, "too much child nodes")
+	return len(n.children) == b.order
 }
 
 func (b *Btree[KeyT, ValueT]) ValidityCheck() error {
