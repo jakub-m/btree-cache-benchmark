@@ -32,6 +32,8 @@ type Btree[KeyT ~int, ValueT any] struct {
 type node[KeyT ~int, ValueT any] struct {
 	// children nodes, either internal nodes, or the actually inserted items (keyValue structures).
 	children []any
+	// childrenCount counts how many children are set, so one does not need to sweep though all the children array.
+	childrenCount int
 	// keys separte children. There are len(children) - 1 keys at any moments.
 	// Leaf nodes (the nodes that contain the the actually inserted items) do not have keys, the keys
 	// array is set to nil.
@@ -109,25 +111,31 @@ func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value ValueT) {
 	}
 	assert(leaf.isLeaf(), "expected leaf for key %d", key)
 	// https://en.wikipedia.org/wiki/B-tree#Insertion
-	//if b.isNodeFull(leaf) {
-	//	leaf.insertToFullNode(key, value)
-	//} else {
-	//	leaf.insertChildInOrder(key, value)
-	//}
-	leaf.insertChildInOrder(key, value)
-	// todo insert to full node
+	if b.isNodeFull(leaf) {
+		panic("dupa")
+	} else {
+		leaf.insertChildInOrder(key, value)
+	}
+}
+
+func (b *Btree[KeyT, ValueT]) isNodeFull(n *node[KeyT, ValueT]) bool {
+	assert(n.childrenCount <= len(n.children), "children count exceeded children array length")
+	assert(n.childrenCount <= b.order, "children count should not be larger than order")
+	return n.childrenCount == b.order
 }
 
 // insertChildInOrder assumes there is space and there is no inserted item with `key`.
 func (n *node[KeyT, ValueT]) insertChildInOrder(key KeyT, value ValueT) {
 	assert(n.isLeaf(), "assumed leaf node")
+	assert(n.childrenCount < len(n.children), "there is no spare capacity left in the array, insertChildInOrder should not be run at all.")
 	insertAtIndex := 0
+	// Find the index at which to insert the new key-value.
 	for _, child := range n.children {
 		if child == nil {
 			break
 		}
 		childKv := child.(*keyValue[KeyT, ValueT])
-		assert(childKv.key != key, "the case that the equal key is in the tree should have been already handled: key=%d", key)
+		assert(childKv.key != key, "the case that the equal key is in the tree should have been already handled: childKv.key=%d , key=%d", childKv.key, key)
 		if childKv.key > key {
 			break
 		}
@@ -138,7 +146,7 @@ func (n *node[KeyT, ValueT]) insertChildInOrder(key KeyT, value ValueT) {
 
 	curr = n.children[insertAtIndex]
 	n.children[insertAtIndex] = &keyValue[KeyT, ValueT]{key: key, value: &value}
-
+	n.childrenCount++
 	for i := insertAtIndex + 1; i < len(n.children); i++ {
 		next = n.children[i]
 		n.children[i] = curr
@@ -146,20 +154,11 @@ func (n *node[KeyT, ValueT]) insertChildInOrder(key KeyT, value ValueT) {
 	}
 }
 
-//func (n *node[KeyT, ValueT]) insertToFullNode(key KeyT, value ValueT) {
-//	panic("todo")
-//}
-
 // isLeaf says if the node is a leaf node, that is, a node that's children are the pointers to the actually
 // stored values.
 func (n *node[KeyT, ValueT]) isLeaf() bool {
 	return n.keys == nil
 }
-
-//func (b *Btree[KeyT, ValueT]) isNodeFull(n *node[KeyT, ValueT]) bool {
-//	assert(len(n.children) <= b.order, "too much child nodes")
-//	return len(n.children) == b.order
-//}
 
 func (b *Btree[KeyT, ValueT]) ValidityCheck() error {
 	check := func(n *node[KeyT, ValueT]) error {
