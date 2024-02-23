@@ -66,15 +66,17 @@ func (b *Btree[K, V]) Insert(key K, value V) {
 	// https://en.wikipedia.org/wiki/B-tree#Insertion
 	if !leafNode.isFull(b.order) {
 		leafNode.insertAssumingHasSpace(key, value)
+		return
 	}
 	// The leaf node is full, so need to split.
-	median := leafNode.medianKeyForChildrenAndKey(key)
-	leftLeaf, rightLeaf := leafNode.splitAroundMedian(median)
+	leftLeaf, rightLeaf, median := leafNode.splitAroundMedian(key, value)
 	newInnerNode := newInnerNodeForSplitLeafs(leftLeaf, rightLeaf, median)
 	if leafNode.isRoot() {
 		b.replaceRoot(newInnerNode)
 	} else {
-		panic("dupa")
+		if newRoot := leafNode.parent.insertNodeRec(newInnerNode); newRoot != nil {
+			b.replaceRoot(newRoot)
+		}
 	}
 }
 
@@ -144,6 +146,31 @@ func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 	return n.children[foundNodeIndex].findLeafNodeByKey(seekedKey)
 }
 
+// insertNodeRec inserts new node to n. If n is full, then split and recursively insert the node to the parent.
+// Optionally, return node that should be a new root node, in case the recursion reaches the top of the tree
+// and the root node needs replacement.
+//
+// Schematically the insertion looks as follows:
+//
+//	   . 15    .   25  .
+//	     |   20,21 | 30,40
+//	---------------------------
+//	50!
+//	---------------------------
+//	             30,40,50 !
+//	---------------------------
+//				   .40.
+//				30   | 40,50
+//	---------------------------
+//	 .15    .    25 . 40 .      !
+//	   |  20,21  |  30 |  40,50
+//	---------------------------
+//	    .     25     .
+//	 .15 .     |   . 40  .
+//	   | 20,21 | 30  | 40,50
+func (n *innerNode[K, V]) insertNodeRec(newNode *innerNode[K, V]) *innerNode[K, V] {
+}
+
 func (n *innerNode[K, V]) isRoot() bool {
 	return n.parent == nil
 }
@@ -162,16 +189,13 @@ func (n *innerNode[K, V]) runRecursiveUntilError(level int, fun func(level int, 
 
 func (n *innerNode[K, V]) print(w io.Writer, indent int) {
 	spaces := strings.Repeat(" ", indent)
+	fmt.Fprintf(w, "%s--\n", spaces)
 	for i, key := range n.keys {
-		fmt.Fprintf(w, "%s%v", spaces, key)
-		if i < (len(n.keys) - 1) {
-			fmt.Fprintf(w, " | ")
-		}
+		n.children[i].print(w, indent+1)
+		fmt.Fprintf(w, "%s%v:\n", spaces, key)
 	}
-	fmt.Fprintf(w, "\n")
-	for _, child := range n.children {
-		child.print(w, indent+1)
-	}
+	n.children[len(n.children)-1].print(w, indent+1)
+	fmt.Fprintf(w, "%s--\n", spaces)
 }
 
 ////////////////////////////////////////
@@ -203,8 +227,8 @@ func (n *leafNode[K, V]) insertAssumingHasSpace(key K, value V) {
 }
 
 func (n *leafNode[K, V]) isFull(order int) bool {
-	assert(len(n.values) < order, "length of values array must be smaller than order")
-	return len(n.values) == (order - 1)
+	assert(len(n.values) <= order, "length of values array must be smaller than order")
+	return len(n.values) == order
 }
 
 // medianKeyForChildrenAndKey return the median out of children elements and the new key.
@@ -213,21 +237,26 @@ func (n *leafNode[K, V]) medianKeyForChildrenAndKey(key K) K {
 	for k := range n.values {
 		keys = append(keys, k)
 	}
-	keys[len(n.values)] = key // insert last key
+	keys = append(keys, key)
 	slices.Sort(keys)
 	return keys[len(keys)/2]
 }
 
-func (n *leafNode[K, V]) splitAroundMedian(median K) (*leafNode[K, V], *leafNode[K, V]) {
+func (n *leafNode[K, V]) splitAroundMedian(newKey K, newValue V) (*leafNode[K, V], *leafNode[K, V], K) {
+	median := n.medianKeyForChildrenAndKey(newKey)
 	left, right := newLeafNode[K, V](), newLeafNode[K, V]()
-	for k, v := range n.values {
+	insertToLeftOrRight := func(k K, v V) {
 		if k < median {
 			left.values[k] = v
 		} else {
 			right.values[k] = v
 		}
 	}
-	return left, right
+	for k, v := range n.values {
+		insertToLeftOrRight(k, v)
+	}
+	insertToLeftOrRight(newKey, newValue)
+	return left, right, median
 }
 
 func (n *leafNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error {

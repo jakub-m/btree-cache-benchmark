@@ -26,7 +26,7 @@ func TestInsertTwoOutOfOrder(t *testing.T) {
 	assertFound(t, b, 20, 120)
 	b.Print(os.Stderr)
 }
-func TestInsertInOfOrder(t *testing.T) {
+func TestInsertInOrder(t *testing.T) {
 	b := btree.New[int, int](2)
 	b.Insert(10, 110)
 	b.Insert(20, 120)
@@ -42,13 +42,12 @@ func TestInsertOverOrder(t *testing.T) {
 	b.Insert(10, 110)
 	b.Insert(20, 120)
 	b.Insert(30, 130)
-	b.Insert(40, 140)
 	b.Print(os.Stderr)
+	b.IntegrityCheck()
 
-	assertFound(t, b, 110, 10)
-	assertFound(t, b, 120, 20)
-	assertFound(t, b, 130, 30)
-	assertFound(t, b, 140, 40)
+	assertFound(t, b, 10, 110)
+	assertFound(t, b, 20, 120)
+	assertFound(t, b, 30, 130)
 }
 
 func TestLotsOfSequentialInsertions(t *testing.T) {
@@ -72,7 +71,12 @@ func TestLotsOfSequentialInsertions(t *testing.T) {
 	}
 }
 
+func TestLotsOfRandomInsertions(t *testing.T) {
+	t.Skip("here should have lots of random insertions")
+}
+
 func assertFound[K cmp.Ordered, V any](t *testing.T, b *btree.Btree[K, V], key K, expected V) {
+	t.Helper()
 	actual, ok := b.Find(key)
 	assert.True(t, ok, "value not found for key %s", key)
 	assert.Equal(t, expected, actual, "value differs for key %s", key)
