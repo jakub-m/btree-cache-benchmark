@@ -4,6 +4,7 @@ import (
 	"btree-cache-benchmark/btree"
 	"cmp"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,25 +14,25 @@ func TestInsertOne(t *testing.T) {
 	b := btree.New[int, int](2)
 	b.Insert(10, 42)
 	assertFound(t, b, 10, 42)
-	// b.Print(os.Stderr)
+	b.Print(os.Stderr)
 }
 
 func TestInsertTwoOutOfOrder(t *testing.T) {
 	b := btree.New[int, int](2)
 	b.Insert(20, 120)
 	b.Insert(10, 110)
-	// assert.NoError(t, b.ValidityCheck())
+	assert.NoError(t, b.IntegrityCheck())
 	assertFound(t, b, 10, 110)
 	assertFound(t, b, 20, 120)
-	// b.Print(os.Stderr)
+	b.Print(os.Stderr)
 }
 func TestInsertInOfOrder(t *testing.T) {
 	b := btree.New[int, int](2)
 	b.Insert(10, 110)
 	b.Insert(20, 120)
-	// b.Print(os.Stderr)
+	b.Print(os.Stderr)
 
-	// assert.NoError(t, b.ValidityCheck())
+	assert.NoError(t, b.IntegrityCheck())
 	assertFound(t, b, 10, 110)
 	assertFound(t, b, 20, 120)
 }
@@ -42,7 +43,7 @@ func TestInsertOverOrder(t *testing.T) {
 	b.Insert(20, 120)
 	b.Insert(30, 130)
 	b.Insert(40, 140)
-	// b.Print(os.Stderr)
+	b.Print(os.Stderr)
 
 	assertFound(t, b, 110, 10)
 	assertFound(t, b, 120, 20)
@@ -60,7 +61,7 @@ func TestLotsOfSequentialInsertions(t *testing.T) {
 			for i := range n {
 				b.Insert(i, i)
 			}
-			// assert.NoError(t, b.ValidityCheck())
+			assert.NoError(t, b.IntegrityCheck())
 			assertNotFound(t, b, -1)
 			for i := range n {
 				assertFound(t, b, i, i)

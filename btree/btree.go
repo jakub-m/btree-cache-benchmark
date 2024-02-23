@@ -2,7 +2,10 @@ package btree
 
 import (
 	"cmp"
+	"fmt"
+	"io"
 	"slices"
+	"strings"
 )
 
 type Btree[K cmp.Ordered, V any] struct {
@@ -30,6 +33,9 @@ type node[K cmp.Ordered, V any] interface {
 	// findLeafNodeByKey returns the leaf node that holds the value with seeked key, or the one that should
 	// hold such a value if it doesn't.
 	findLeafNodeByKey(key K) *leafNode[K, V]
+	isRoot() bool
+	runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error
+	print(w io.Writer, indent int)
 }
 
 ////////////////////////////////////////
@@ -62,9 +68,36 @@ func (b *Btree[K, V]) Insert(key K, value V) {
 		leafNode.insertAssumingHasSpace(key, value)
 	}
 	// The leaf node is full, so need to split.
-	medianKey := leafNode.medianKeyForChildrenAndKey(key)
-	leftLeaf, rightLeaf := leafNode.splitAroundMedian(medianKey)
+	median := leafNode.medianKeyForChildrenAndKey(key)
+	leftLeaf, rightLeaf := leafNode.splitAroundMedian(median)
+	newInnerNode := newInnerNodeForSplitLeafs(leftLeaf, rightLeaf, median)
+	if leafNode.isRoot() {
+		b.replaceRoot(newInnerNode)
+	} else {
+		panic("dupa")
+	}
+}
 
+func (b *Btree[K, V]) replaceRoot(n *innerNode[K, V]) {
+	b.root = n
+}
+
+func (b *Btree[K, V]) IntegrityCheck() error {
+	checkLeafSize := func(order int, n node[K, V]) error {
+		leaf, ok := n.(*leafNode[K, V])
+		if !ok {
+			return nil
+		}
+		if len(leaf.values) > b.order {
+			return fmt.Errorf("size of the leaf node is larger than the order")
+		}
+		return nil
+	}
+	return b.root.runRecursiveUntilError(0, checkLeafSize)
+}
+
+func (b *Btree[K, V]) Print(w io.Writer) {
+	b.root.print(w, 0)
 }
 
 ////////////////////////////////////////
@@ -77,6 +110,18 @@ type innerNode[K cmp.Ordered, V any] struct {
 	// keys separate children. For m children there is always m-1 keys.
 	keys   []K
 	parent *innerNode[K, V]
+}
+
+func newInnerNodeForSplitLeafs[K cmp.Ordered, V any](leftLeaf, rightLeaf *leafNode[K, V], median K) *innerNode[K, V] {
+	parent := &innerNode[K, V]{
+		children: []node[K, V]{leftLeaf, rightLeaf},
+		keys:     []K{median},
+	}
+	assert(leftLeaf.parent == nil, "after split, leaf parent should be null")
+	leftLeaf.parent = parent
+	assert(rightLeaf.parent == nil, "after split, leaf parent shoud be null")
+	rightLeaf.parent = parent
+	return parent
 }
 
 func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
@@ -99,6 +144,36 @@ func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 	return n.children[foundNodeIndex].findLeafNodeByKey(seekedKey)
 }
 
+func (n *innerNode[K, V]) isRoot() bool {
+	return n.parent == nil
+}
+
+func (n *innerNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error {
+	if err := fun(level, n); err != nil {
+		return err
+	}
+	for _, child := range n.children {
+		if err := child.runRecursiveUntilError(level+1, fun); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (n *innerNode[K, V]) print(w io.Writer, indent int) {
+	spaces := strings.Repeat(" ", indent)
+	for i, key := range n.keys {
+		fmt.Fprintf(w, "%s%v", spaces, key)
+		if i < (len(n.keys) - 1) {
+			fmt.Fprintf(w, " | ")
+		}
+	}
+	fmt.Fprintf(w, "\n")
+	for _, child := range n.children {
+		child.print(w, indent+1)
+	}
+}
+
 ////////////////////////////////////////
 // Leaf node functions and methods
 ////////////////////////////////////////
@@ -117,6 +192,10 @@ func newLeafNode[K cmp.Ordered, V any]() *leafNode[K, V] {
 
 func (n *leafNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 	return n
+}
+
+func (n *leafNode[K, V]) isRoot() bool {
+	return n.parent == nil
 }
 
 func (n *leafNode[K, V]) insertAssumingHasSpace(key K, value V) {
@@ -139,8 +218,30 @@ func (n *leafNode[K, V]) medianKeyForChildrenAndKey(key K) K {
 	return keys[len(keys)/2]
 }
 
-func (n *leafNode[K, V]) splitAroundMedian(key K) (*leafNode[K, V], *leafNode[K, V]) {
-	left := newLeafNode[K, V]()
+func (n *leafNode[K, V]) splitAroundMedian(median K) (*leafNode[K, V], *leafNode[K, V]) {
+	left, right := newLeafNode[K, V](), newLeafNode[K, V]()
+	for k, v := range n.values {
+		if k < median {
+			left.values[k] = v
+		} else {
+			right.values[k] = v
+		}
+	}
+	return left, right
+}
+
+func (n *leafNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error {
+	if err := fun(level, n); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (n *leafNode[K, V]) print(w io.Writer, indent int) {
+	spaces := strings.Repeat(" ", indent)
+	for k, v := range n.values {
+		fmt.Fprintf(w, "%s[%v]:%v\n", spaces, k, v)
+	}
 }
 
 /// func (n *node[K, V]) createLeftNodeAfterSplit(median K) *node[K, V] {
@@ -198,74 +299,3 @@ func (n *leafNode[K, V]) splitAroundMedian(key K) (*leafNode[K, V], *leafNode[K,
 /// 		curr = next
 /// 	}
 /// }
-
-/// func (b *Btree[K, V]) ValidityCheck() error {
-/// 	check := func(n *node[K, V]) error {
-/// 		if n.isLeaf() {
-/// 			var prevKey *K
-/// 			for _, child := range n.children {
-/// 				kv := child.(*keyValue[K, V])
-/// 				if prevKey != nil {
-/// 					if !(*prevKey < kv.key) {
-/// 						return fmt.Errorf("for a child, prev key=%d, next key=%d", *prevKey, kv.key)
-/// 					}
-/// 				}
-/// 				prevKey = &kv.key
-/// 			}
-/// 		}
-/// 		return nil
-/// 	}
-/// 	return b.root.runRecursiveUntilError(check)
-/// }
-
-/// func (n *node[K, V]) runRecursiveUntilError(fun func(n *node[K, V]) error) error {
-/// 	if err := fun(n); err != nil {
-/// 		return err
-/// 	}
-/// 	for _, child := range n.children {
-/// 		if child != nil {
-/// 			if n2, ok := child.(*node[K, V]); ok {
-/// 				if err := n2.runRecursiveUntilError(fun); err != nil {
-/// 					return err
-/// 				}
-/// 			}
-/// 		}
-/// 	}
-/// 	return nil
-/// }
-///
-/// func (b *Btree[K, V]) Print(w io.Writer) {
-/// 	b.root.print(w, 0)
-/// }
-///
-/// func (n *node[K, V]) print(w io.Writer, indent int) {
-/// 	spaces := strings.Repeat(" ", indent)
-/// 	fmt.Fprintf(w, "%schildren: %d isLeaf: %t\n", spaces, len(n.children), n.isLeaf())
-/// 	if n.isLeaf() {
-/// 		for i, child := range n.children {
-/// 			if child == nil {
-/// 				fmt.Fprintf(w, "%s[%d:nil] nil\n", spaces, i)
-/// 			} else {
-/// 				kv := child.(*keyValue[K, V])
-/// 				fmt.Fprintf(w, "%s[%d:%d] %s\n", spaces, i, kv.key, fmt.Sprint(kv.value))
-/// 			}
-/// 		}
-/// 	} else {
-/// 		for i, key := range n.keys {
-/// 			fmt.Fprintf(w, "%s%d", spaces, key)
-/// 			if i < (len(n.keys) - 1) {
-/// 				fmt.Fprintf(w, " | ")
-/// 			}
-/// 			fmt.Fprintf(w, "\n")
-/// 			for _, child := range n.children {
-/// 				n2 := child.(*node[K, V])
-/// 				n2.print(w, indent+1)
-/// 			}
-/// 		}
-/// 		for _, child := range n.children {
-/// 			kv := child.(*keyValue[K, V])
-/// 			fmt.Fprintf(w, "%s[k:%d] %s\n", spaces, kv.key, fmt.Sprint(kv.value))
-/// 		}
-/// 	}
-/// }
-///
