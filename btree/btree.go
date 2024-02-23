@@ -3,6 +3,7 @@ package btree
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -30,7 +31,8 @@ type Btree[KeyT ~int, ValueT any] struct {
 // in the Btree itself.
 // The leaf nodes have children (the items), but do not have keys.
 type node[KeyT ~int, ValueT any] struct {
-	// children nodes, either internal nodes, or the actually inserted items (keyValue structures).
+	// children nodes, either internal nodes, or the actually inserted items (keyValue structures). Length of children
+	// array is always equal to tree order, the empty children nodes are set to nil.
 	children []any
 	// childrenCount counts how many children are set, so one does not need to sweep though all the children array.
 	childrenCount int
@@ -112,7 +114,7 @@ func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value ValueT) {
 	assert(leaf.isLeaf(), "expected leaf for key %d", key)
 	// https://en.wikipedia.org/wiki/B-tree#Insertion
 	if b.isNodeFull(leaf) {
-		panic("dupa")
+		leaf.insertChildToFullNode(key, value)
 	} else {
 		leaf.insertChildInOrder(key, value)
 	}
@@ -121,6 +123,7 @@ func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value ValueT) {
 func (b *Btree[KeyT, ValueT]) isNodeFull(n *node[KeyT, ValueT]) bool {
 	assert(n.childrenCount <= len(n.children), "children count exceeded children array length")
 	assert(n.childrenCount <= b.order, "children count should not be larger than order")
+	assert(len(n.children) == b.order, "len(children) should always be equal to btree order")
 	return n.childrenCount == b.order
 }
 
@@ -152,6 +155,52 @@ func (n *node[KeyT, ValueT]) insertChildInOrder(key KeyT, value ValueT) {
 		n.children[i] = curr
 		curr = next
 	}
+}
+
+func (n *node[KeyT, ValueT]) insertChildToFullNode(key KeyT, value ValueT) {
+	medianKey := n.medianKeyForChildrenAndKey(key)
+	leftNode := n.createLeftNodeAfterSplit(medianKey)
+	rightNode := n.createRightNodeAfterSplit(medianKey)
+}
+
+// medianKeyForChildrenAndKey return the median out of children elements and the new key.
+func (n *node[KeyT, ValueT]) medianKeyForChildrenAndKey(key KeyT) KeyT {
+	keys := make([]KeyT, 0, len(n.children)+1)
+	for i, c := range n.children {
+		assert(c != nil, "at this point no child should be null")
+		keys[i] = c.(*keyValue[KeyT, ValueT]).key
+	}
+	keys[len(n.children)] = key // insert last key
+	slices.Sort(keys)
+	return keys[len(keys)/2]
+}
+
+func (n *node[KeyT, ValueT]) createLeftNodeAfterSplit(median KeyT) *node[KeyT, ValueT] {
+	leftChildren := make([]any, len(n.children))
+	rightChildren := make([]any, len(n.children))
+	if n.isLeaf() {
+		for _, c := range n.children {
+			kv := c.(*keyValue[KeyT, ValueT])
+			assert(kv.key != median, "median should not be equal to any key value")
+			if kv.key < median {
+				leftChildren = append(leftChildren, c)
+			} else {
+				rightChildren = append(rightChildren, c)
+			}
+		}
+
+	} else {
+
+	}
+
+	// return &node[KeyT, ValueT]{
+	// 	children: ...,
+	// 	childrenCount, ...
+	// 	keys: ...
+	// }
+}
+
+func (n *node[KeyT, ValueT]) createRightNodeAfterSplit(median KeyT) *node[KeyT, ValueT] {
 }
 
 // isLeaf says if the node is a leaf node, that is, a node that's children are the pointers to the actually
