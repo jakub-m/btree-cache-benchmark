@@ -1,6 +1,9 @@
 package btree
 
-import "cmp"
+import (
+	"cmp"
+	"slices"
+)
 
 type Btree[KeyT cmp.Ordered, ValueT any] struct {
 	// The maximum number of child nodes of a node.
@@ -34,12 +37,10 @@ type node[KeyT cmp.Ordered, ValueT any] interface {
 ////////////////////////////////////////
 
 func New[KeyT ~int, ValueT any](order int) *Btree[KeyT, ValueT] {
-	root := leafNode[KeyT, ValueT]{
-		values: make(map[KeyT]ValueT, order),
-	}
+	root := newLeafNode[KeyT, ValueT]()
 	return &Btree[KeyT, ValueT]{
 		order: order,
-		root:  &root,
+		root:  root,
 	}
 }
 
@@ -61,13 +62,10 @@ func (b *Btree[KeyT, ValueT]) Insert(key KeyT, value ValueT) {
 		leafNode.insertAssumingHasSpace(key, value)
 	}
 	// The leaf node is full, so need to split.
-}
+	medianKey := leafNode.medianKeyForChildrenAndKey(key)
+	leftLeaf, rightLeaf := leafNode.splitAroundMedian(medianKey)
 
-/// func (n *node[KeyT, ValueT]) insertChildToFullNode(key KeyT, value ValueT) {
-/// 	medianKey := n.medianKeyForChildrenAndKey(key)
-/// 	leftNode := n.createLeftNodeAfterSplit(medianKey)
-/// 	rightNode := n.createRightNodeAfterSplit(medianKey)
-/// }
+}
 
 ////////////////////////////////////////
 // Inner node functions and methods
@@ -105,6 +103,18 @@ func (n *innerNode[KeyT, ValueT]) findLeafNodeByKey(seekedKey KeyT) *leafNode[Ke
 // Leaf node functions and methods
 ////////////////////////////////////////
 
+// leafNode contains no children, but arbitrary values stored under keys.
+type leafNode[KeyT cmp.Ordered, ValueT any] struct {
+	values map[KeyT]ValueT
+	parent *innerNode[KeyT, ValueT]
+}
+
+func newLeafNode[KeyT cmp.Ordered, ValueT any]() *leafNode[KeyT, ValueT] {
+	return &leafNode[KeyT, ValueT]{
+		values: make(map[KeyT]ValueT),
+	}
+}
+
 func (n *leafNode[KeyT, ValueT]) findLeafNodeByKey(seekedKey KeyT) *leafNode[KeyT, ValueT] {
 	return n
 }
@@ -118,13 +128,46 @@ func (n *leafNode[KeyT, ValueT]) isFull(order int) bool {
 	return len(n.values) == (order - 1)
 }
 
-///////////////////////////////////////////////////////
-
-// leafNode contains no children, but arbitrary values stored under keys.
-type leafNode[KeyT cmp.Ordered, ValueT any] struct {
-	values map[KeyT]ValueT
-	parent *innerNode[KeyT, ValueT]
+// medianKeyForChildrenAndKey return the median out of children elements and the new key.
+func (n *leafNode[KeyT, ValueT]) medianKeyForChildrenAndKey(key KeyT) KeyT {
+	keys := make([]KeyT, 0, len(n.values)+1)
+	for k := range n.values {
+		keys = append(keys, k)
+	}
+	keys[len(n.values)] = key // insert last key
+	slices.Sort(keys)
+	return keys[len(keys)/2]
 }
+
+func (n *leafNode[KeyT, ValueT]) splitAroundMedian(key KeyT) (*leafNode[KeyT, ValueT], *leafNode[KeyT, ValueT]) {
+	left := newLeafNode[KeyT, ValueT]()
+}
+
+/// func (n *node[KeyT, ValueT]) createLeftNodeAfterSplit(median KeyT) *node[KeyT, ValueT] {
+/// 	leftChildren := make([]any, len(n.children))
+/// 	rightChildren := make([]any, len(n.children))
+/// 	if n.isLeaf() {
+/// 		for _, c := range n.children {
+/// 			kv := c.(*keyValue[KeyT, ValueT])
+/// 			assert(kv.key != median, "median should not be equal to any key value")
+/// 			if kv.key < median {
+/// 				leftChildren = append(leftChildren, c)
+/// 			} else {
+/// 				rightChildren = append(rightChildren, c)
+/// 			}
+/// 		}
+/// 	} else {
+///
+/// 	}
+///
+/// 	// return &node[KeyT, ValueT]{
+/// 	// 	children: ...,
+/// 	// 	childrenCount, ...
+/// 	// 	keys: ...
+/// 	// }
+/// }
+
+///////////////////////////////////////////////////////
 
 /// // insertChildInOrder assumes there is space and there is no inserted item with `key`.
 /// func (n *node[KeyT, ValueT]) insertChildInOrder(key KeyT, value ValueT) {
@@ -156,51 +199,6 @@ type leafNode[KeyT cmp.Ordered, ValueT any] struct {
 /// 	}
 /// }
 
-/// // medianKeyForChildrenAndKey return the median out of children elements and the new key.
-/// func (n *node[KeyT, ValueT]) medianKeyForChildrenAndKey(key KeyT) KeyT {
-/// 	keys := make([]KeyT, 0, len(n.children)+1)
-/// 	for i, c := range n.children {
-/// 		assert(c != nil, "at this point no child should be null")
-/// 		keys[i] = c.(*keyValue[KeyT, ValueT]).key
-/// 	}
-/// 	keys[len(n.children)] = key // insert last key
-/// 	slices.Sort(keys)
-/// 	return keys[len(keys)/2]
-/// }
-///
-/// func (n *node[KeyT, ValueT]) createLeftNodeAfterSplit(median KeyT) *node[KeyT, ValueT] {
-/// 	leftChildren := make([]any, len(n.children))
-/// 	rightChildren := make([]any, len(n.children))
-/// 	if n.isLeaf() {
-/// 		for _, c := range n.children {
-/// 			kv := c.(*keyValue[KeyT, ValueT])
-/// 			assert(kv.key != median, "median should not be equal to any key value")
-/// 			if kv.key < median {
-/// 				leftChildren = append(leftChildren, c)
-/// 			} else {
-/// 				rightChildren = append(rightChildren, c)
-/// 			}
-/// 		}
-/// 	} else {
-///
-/// 	}
-///
-/// 	// return &node[KeyT, ValueT]{
-/// 	// 	children: ...,
-/// 	// 	childrenCount, ...
-/// 	// 	keys: ...
-/// 	// }
-/// }
-///
-/// func (n *node[KeyT, ValueT]) createRightNodeAfterSplit(median KeyT) *node[KeyT, ValueT] {
-/// }
-///
-/// // isLeaf says if the node is a leaf node, that is, a node that's children are the pointers to the actually
-/// // stored values.
-/// func (n *node[KeyT, ValueT]) isLeaf() bool {
-/// 	return n.keys == nil
-/// }
-///
 /// func (b *Btree[KeyT, ValueT]) ValidityCheck() error {
 /// 	check := func(n *node[KeyT, ValueT]) error {
 /// 		if n.isLeaf() {
@@ -219,7 +217,7 @@ type leafNode[KeyT cmp.Ordered, ValueT any] struct {
 /// 	}
 /// 	return b.root.runRecursiveUntilError(check)
 /// }
-///
+
 /// func (n *node[KeyT, ValueT]) runRecursiveUntilError(fun func(n *node[KeyT, ValueT]) error) error {
 /// 	if err := fun(n); err != nil {
 /// 		return err
