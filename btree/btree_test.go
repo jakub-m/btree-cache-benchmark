@@ -50,6 +50,21 @@ func TestInsertOverOrder(t *testing.T) {
 	assertFound(t, b, 30, 130)
 }
 
+func TestInsertTwiceOverOrder(t *testing.T) {
+	b := btree.New[int, int](2)
+	b.Insert(10, 110)
+	b.Insert(20, 120)
+	b.Insert(30, 130)
+	b.Insert(40, 140)
+	b.Print(os.Stderr)
+	b.IntegrityCheck()
+
+	assertFound(t, b, 10, 110)
+	assertFound(t, b, 20, 120)
+	assertFound(t, b, 30, 130)
+	assertFound(t, b, 40, 140)
+}
+
 func TestLotsOfSequentialInsertions(t *testing.T) {
 	n := 1000
 	for _, order := range []int{2, 3, 4, 10} {

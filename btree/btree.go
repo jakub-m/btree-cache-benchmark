@@ -35,6 +35,7 @@ type node[K cmp.Ordered, V any] interface {
 	findLeafNodeByKey(key K) *leafNode[K, V]
 	isRoot() bool
 	runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error
+	insertNodesToParentRec(left, right node[K, V], median K) *innerNode[K, V]
 	print(w io.Writer, indent int)
 }
 
@@ -70,11 +71,11 @@ func (b *Btree[K, V]) Insert(key K, value V) {
 	}
 	// The leaf node is full, so need to split.
 	leftLeaf, rightLeaf, median := leafNode.splitAroundMedian(key, value)
-	newInnerNode := newInnerNodeForSplitLeafs(leftLeaf, rightLeaf, median)
 	if leafNode.isRoot() {
+		newInnerNode := newInnerNodeForSplitLeafs(leftLeaf, rightLeaf, median)
 		b.replaceRoot(newInnerNode)
 	} else {
-		if newRoot := leafNode.parent.insertNodeRec(newInnerNode); newRoot != nil {
+		if newRoot := leafNode.insertNodesToParentRec(leftLeaf, rightLeaf, median); newRoot != nil {
 			b.replaceRoot(newRoot)
 		}
 	}
@@ -146,7 +147,7 @@ func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 	return n.children[foundNodeIndex].findLeafNodeByKey(seekedKey)
 }
 
-// insertNodeRec inserts new node to n. If n is full, then split and recursively insert the node to the parent.
+// insertNodeRecToParent inserts new node to n. If n is full, then split and recursively insert the node to the parent.
 // Optionally, return node that should be a new root node, in case the recursion reaches the top of the tree
 // and the root node needs replacement.
 //
@@ -157,18 +158,19 @@ func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 //	---------------------------
 //	50!
 //	---------------------------
-//	             30,40,50 !
+//	             30,40,50       !
 //	---------------------------
-//				   .40.
+//				  . 40 .          (40 is the median used to split leafs)
 //				30   | 40,50
 //	---------------------------
-//	 .15    .    25 . 40 .      !
+//	 .15    .    25 . 40    .  !
 //	   |  20,21  |  30 |  40,50
 //	---------------------------
 //	    .     25     .
 //	 .15 .     |   . 40  .
 //	   | 20,21 | 30  | 40,50
-func (n *innerNode[K, V]) insertNodeRec(newNode *innerNode[K, V]) *innerNode[K, V] {
+func (n *innerNode[K, V]) insertNodesToParentRec(left, right node[K, V], median K) *innerNode[K, V] {
+	panic("xxx insert to parent inner")
 }
 
 func (n *innerNode[K, V]) isRoot() bool {
@@ -257,6 +259,11 @@ func (n *leafNode[K, V]) splitAroundMedian(newKey K, newValue V) (*leafNode[K, V
 	}
 	insertToLeftOrRight(newKey, newValue)
 	return left, right, median
+}
+
+func (n *leafNode[K, V]) insertNodesToParentRec(left, right node[K, V], median K) *innerNode[K, V] {
+	assert(n.parent != nil, "handling parent=nil for leaf node should be handled elsewhere") // should it?
+	panic("xxx insert to parent leaf")
 }
 
 func (n *leafNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error {
