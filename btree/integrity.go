@@ -8,9 +8,34 @@ import (
 
 // TODO add integrity check checking values in sub-trees
 func (b *Btree[K, V]) IntegrityCheck() error {
+	keysPerNode := make(map[node[K, V]][]K)
+	b.collectLeafKeysPerNode(b.root, keysPerNode)
+	checkKeysPerNode := func(order int, n node[K, V]) error {
+		inner, ok := n.(*innerNode[K, V])
+		if !ok {
+			return nil
+		}
+		for i, c := range inner.children {
+			keysForChild := keysPerNode[c]
+			assert(keysForChild != nil)
+			leftmost := i == 0
+			rightmost := i == len(inner.keys)
+			minKey := slices.Min(keysForChild)
+			maxKey := slices.Max(keysForChild)
+			if !leftmost && !(minKey > inner.keys[i-1]) {
+				return fmt.Errorf("bad min key")
+			}
+			if !rightmost && !(maxKey < inner.keys[i]) {
+				return fmt.Errorf("mad max key")
+			}
+		}
+		return nil
+	}
+
 	chained := chainIntegrityCheck[K, V](
 		b.integrityCheckLeafSize,
 		b.integrityCheckKeyAndChildrenLen,
+		checkKeysPerNode,
 	)
 	return b.root.runRecursiveUntilError(0, chained)
 }
@@ -49,4 +74,26 @@ func (b *Btree[K, V]) integrityCheckKeyAndChildrenLen(order int, n node[K, V]) e
 		return fmt.Errorf("keys are not sorted: %v", inner.keys)
 	}
 	return nil
+}
+
+func (b *Btree[K, V]) collectLeafKeysPerNode(n node[K, V], keysPerNode map[node[K, V]][]K) {
+	switch t := n.(type) {
+	case *leafNode[K, V]:
+		keys := []K{}
+		for k := range t.values {
+			keys = append(keys, k)
+		}
+		assert(keysPerNode[n] == nil)
+		keysPerNode[n] = keys
+	case *innerNode[K, V]:
+		keys := []K{}
+		for _, c := range t.children {
+			b.collectLeafKeysPerNode(c, keysPerNode)
+			subKeys := keysPerNode[c]
+			assert(subKeys != nil)
+			keys = append(keys, subKeys...)
+		}
+		assert(keysPerNode[n] == nil)
+		keysPerNode[n] = keys
+	}
 }
