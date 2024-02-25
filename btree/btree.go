@@ -1,3 +1,21 @@
+// Schematically the insertion looks as follows, for a B-tree of order 2.
+//
+//	   . 15    .   25  .
+//	     |   20,21 | 30,40
+//	---------------------------
+//	50!                           // Insert new value 50
+//	---------------------------
+//	             30,40,50      !
+//	---------------------------
+//				  . 40 .          // 40 is the median used to split leafs.
+//				30   | 40,50      // New left and new right and median of 40.
+//	---------------------------
+//	 . 15   .    25 . 40    .  !  // Try he parent is already full, needs to split again
+//	   |  20,21  |  30 |  40,50
+//	---------------------------
+//	    .     25     .            // The split uses 15,25,40, so 25 is new median with two sub-trees
+//	 .15 .     |   . 40  .        // the new node with 25 as a key is added to the parent.
+//	   | 20,21 | 30  | 40,50
 package btree
 
 import (
@@ -34,8 +52,10 @@ type node[K cmp.Ordered, V any] interface {
 	// hold such a value if it doesn't.
 	findLeafNodeByKey(key K) *leafNode[K, V]
 	isRoot() bool
+	getParent() *innerNode[K, V]
 	runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error
-	insertNodesToParentRec(left, right node[K, V], median K) *innerNode[K, V]
+	// The returned node is (optional) new root node.
+	// insertNodesToParentRec(child, left, right node[K, V], order int, median K) *innerNode[K, V]
 	print(w io.Writer, indent int)
 }
 
@@ -61,28 +81,34 @@ func (b *Btree[K, V]) Find(key K) (V, bool) {
 }
 
 func (b *Btree[K, V]) Insert(key K, value V) {
+	// https://en.wikipedia.org/wiki/B-tree#Insertion
 	leafNode := b.root.findLeafNodeByKey(key)
 	assert(leafNode != nil, "there always must be some leaf node, not found for key %s", key)
-
-	// https://en.wikipedia.org/wiki/B-tree#Insertion
-	if !leafNode.isFull(b.order) {
-		leafNode.insertAssumingHasSpace(key, value)
+	leafNode.insertIgnoringOrder(key, value)
+	if !leafNode.isOverflow(b.order) {
 		return
 	}
-	// The leaf node is full, so need to split.
-	leftLeaf, rightLeaf, median := leafNode.splitAroundMedian(key, value)
-	if leafNode.isRoot() {
-		newInnerNode := newInnerNodeForSplitLeafs(leftLeaf, rightLeaf, median)
-		b.replaceRoot(newInnerNode)
-	} else {
-		if newRoot := leafNode.insertNodesToParentRec(leftLeaf, rightLeaf, median); newRoot != nil {
-			b.replaceRoot(newRoot)
-		}
+	left, right, median := leafNode.splitAroundMedian()
+	if newRoot := b.replaceNodeWithTwoNodesAndSeparatorRec(leafNode, left, right, median); newRoot != nil {
+		b.root = newRoot
 	}
 }
 
-func (b *Btree[K, V]) replaceRoot(n *innerNode[K, V]) {
-	b.root = n
+// replaceNodeWithTwoNodesAndSeparatorRec does not care about order. Optionally, returns new root node.
+func (b *Btree[K, V]) replaceNodeWithTwoNodesAndSeparatorRec(childToRemove, left, right node[K, V], separator K) *innerNode[K, V] {
+	parent := childToRemove.getParent()
+	if parent == nil {
+		return &innerNode[K, V]{
+			children: []node[K, V]{left, right},
+			keys:     []K{separator},
+		}
+	}
+	parent.expandAtChild(childToRemove, left, right, separator)
+	if !parent.isOverflow(b.order) {
+		return nil
+	}
+	newLeft, newRight, newMedian := parent.splitAroundMedian()
+	return b.replaceNodeWithTwoNodesAndSeparatorRec(parent, newLeft, newRight, newMedian)
 }
 
 func (b *Btree[K, V]) IntegrityCheck() error {
@@ -111,20 +137,10 @@ func (b *Btree[K, V]) Print(w io.Writer) {
 type innerNode[K cmp.Ordered, V any] struct {
 	children []node[K, V]
 	// keys separate children. For m children there is always m-1 keys.
+	// Key i is the key after child i, like:
+	//   child[0], key[0], child[1], key[1], child[2], key[2], child[3]
 	keys   []K
 	parent *innerNode[K, V]
-}
-
-func newInnerNodeForSplitLeafs[K cmp.Ordered, V any](leftLeaf, rightLeaf *leafNode[K, V], median K) *innerNode[K, V] {
-	parent := &innerNode[K, V]{
-		children: []node[K, V]{leftLeaf, rightLeaf},
-		keys:     []K{median},
-	}
-	assert(leftLeaf.parent == nil, "after split, leaf parent should be null")
-	leftLeaf.parent = parent
-	assert(rightLeaf.parent == nil, "after split, leaf parent shoud be null")
-	rightLeaf.parent = parent
-	return parent
 }
 
 func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
@@ -147,34 +163,25 @@ func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 	return n.children[foundNodeIndex].findLeafNodeByKey(seekedKey)
 }
 
-// insertNodeRecToParent inserts new node to n. If n is full, then split and recursively insert the node to the parent.
-// Optionally, return node that should be a new root node, in case the recursion reaches the top of the tree
-// and the root node needs replacement.
-//
-// Schematically the insertion looks as follows:
-//
-//	   . 15    .   25  .
-//	     |   20,21 | 30,40
-//	---------------------------
-//	50!
-//	---------------------------
-//	             30,40,50       !
-//	---------------------------
-//				  . 40 .          (40 is the median used to split leafs)
-//				30   | 40,50
-//	---------------------------
-//	 .15    .    25 . 40    .  !
-//	   |  20,21  |  30 |  40,50
-//	---------------------------
-//	    .     25     .
-//	 .15 .     |   . 40  .
-//	   | 20,21 | 30  | 40,50
-func (n *innerNode[K, V]) insertNodesToParentRec(left, right node[K, V], median K) *innerNode[K, V] {
-	panic("xxx insert to parent inner")
-}
-
 func (n *innerNode[K, V]) isRoot() bool {
 	return n.parent == nil
+}
+
+func (n *innerNode[K, V]) isOverflow(order int) bool {
+	assert(len(n.children) <= order+1, "there should be no path that results in child len > one more than order, len(children)=%d, order=%d", len(n.children), order)
+	return len(n.children) > order
+}
+
+func (n *innerNode[K, V]) expandAtChild(childToRemove, left, right node[K, V], separator K) {
+	i := slices.Index(n.children, childToRemove)
+	if i == -1 {
+		panic("BUG! Could not find child!")
+	}
+	// This can be optimized to not delete but replace in place with left node.
+	n.children = slices.Delete(n.children, i, i+1)
+	n.children = slices.Insert(n.children, i, left, right)
+	n.keys = slices.Delete(n.keys, i, i+1)
+	n.keys = slices.Insert(n.keys, i, separator)
 }
 
 func (n *innerNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error {
@@ -198,6 +205,31 @@ func (n *innerNode[K, V]) print(w io.Writer, indent int) {
 	}
 	n.children[len(n.children)-1].print(w, indent+1)
 	fmt.Fprintf(w, "%s--\n", spaces)
+}
+
+func (n *innerNode[K, V]) splitAroundMedian() (*innerNode[K, V], *innerNode[K, V], K) {
+	assert(slices.IsSorted(n.keys), "expected keys to be sorted, was: %v", n.keys)
+	iMedian := len(n.keys) / 2
+	medianValue := n.keys[iMedian]
+	leftChildren := slices.Clone(n.children[:iMedian+1]) // clone to allow GC collecting n.children
+	leftKeys := slices.Clone(n.keys[:iMedian])
+	rightChildren := slices.Clone(n.children[iMedian+1:])
+	rightKeys := slices.Clone(n.keys[iMedian+1:])
+	newLeft := &innerNode[K, V]{
+		children: leftChildren,
+		keys:     leftKeys,
+		parent:   n,
+	}
+	newRight := &innerNode[K, V]{
+		children: rightChildren,
+		keys:     rightKeys,
+		parent:   n,
+	}
+	return newLeft, newRight, medianValue
+}
+
+func (n *innerNode[K, V]) getParent() *innerNode[K, V] {
+	return n.parent
 }
 
 ////////////////////////////////////////
@@ -224,28 +256,20 @@ func (n *leafNode[K, V]) isRoot() bool {
 	return n.parent == nil
 }
 
-func (n *leafNode[K, V]) insertAssumingHasSpace(key K, value V) {
+func (n *leafNode[K, V]) isOverflow(order int) bool {
+	return len(n.values) > order
+}
+
+func (n *leafNode[K, V]) getParent() *innerNode[K, V] {
+	return n.parent
+}
+
+func (n *leafNode[K, V]) insertIgnoringOrder(key K, value V) {
 	n.values[key] = value
 }
 
-func (n *leafNode[K, V]) isFull(order int) bool {
-	assert(len(n.values) <= order, "length of values array must be smaller than order")
-	return len(n.values) == order
-}
-
-// medianKeyForChildrenAndKey return the median out of children elements and the new key.
-func (n *leafNode[K, V]) medianKeyForChildrenAndKey(key K) K {
-	keys := make([]K, 0, len(n.values)+1)
-	for k := range n.values {
-		keys = append(keys, k)
-	}
-	keys = append(keys, key)
-	slices.Sort(keys)
-	return keys[len(keys)/2]
-}
-
-func (n *leafNode[K, V]) splitAroundMedian(newKey K, newValue V) (*leafNode[K, V], *leafNode[K, V], K) {
-	median := n.medianKeyForChildrenAndKey(newKey)
+func (n *leafNode[K, V]) splitAroundMedian() (*leafNode[K, V], *leafNode[K, V], K) {
+	median := n.medianKey()
 	left, right := newLeafNode[K, V](), newLeafNode[K, V]()
 	insertToLeftOrRight := func(k K, v V) {
 		if k < median {
@@ -257,13 +281,16 @@ func (n *leafNode[K, V]) splitAroundMedian(newKey K, newValue V) (*leafNode[K, V
 	for k, v := range n.values {
 		insertToLeftOrRight(k, v)
 	}
-	insertToLeftOrRight(newKey, newValue)
 	return left, right, median
 }
 
-func (n *leafNode[K, V]) insertNodesToParentRec(left, right node[K, V], median K) *innerNode[K, V] {
-	assert(n.parent != nil, "handling parent=nil for leaf node should be handled elsewhere") // should it?
-	panic("xxx insert to parent leaf")
+func (n *leafNode[K, V]) medianKey() K {
+	keys := make([]K, 0, len(n.values))
+	for k := range n.values {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys[len(keys)/2]
 }
 
 func (n *leafNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error {
@@ -279,59 +306,3 @@ func (n *leafNode[K, V]) print(w io.Writer, indent int) {
 		fmt.Fprintf(w, "%s[%v]:%v\n", spaces, k, v)
 	}
 }
-
-/// func (n *node[K, V]) createLeftNodeAfterSplit(median K) *node[K, V] {
-/// 	leftChildren := make([]any, len(n.children))
-/// 	rightChildren := make([]any, len(n.children))
-/// 	if n.isLeaf() {
-/// 		for _, c := range n.children {
-/// 			kv := c.(*keyValue[K, V])
-/// 			assert(kv.key != median, "median should not be equal to any key value")
-/// 			if kv.key < median {
-/// 				leftChildren = append(leftChildren, c)
-/// 			} else {
-/// 				rightChildren = append(rightChildren, c)
-/// 			}
-/// 		}
-/// 	} else {
-///
-/// 	}
-///
-/// 	// return &node[K, V]{
-/// 	// 	children: ...,
-/// 	// 	childrenCount, ...
-/// 	// 	keys: ...
-/// 	// }
-/// }
-
-///////////////////////////////////////////////////////
-
-/// // insertChildInOrder assumes there is space and there is no inserted item with `key`.
-/// func (n *node[K, V]) insertChildInOrder(key K, value V) {
-/// 	assert(n.isLeaf(), "assumed leaf node")
-/// 	assert(n.childrenCount < len(n.children), "there is no spare capacity left in the array, insertChildInOrder should not be run at all.")
-/// 	insertAtIndex := 0
-/// 	// Find the index at which to insert the new key-value.
-/// 	for _, child := range n.children {
-/// 		if child == nil {
-/// 			break
-/// 		}
-/// 		childKv := child.(*keyValue[K, V])
-/// 		assert(childKv.key != key, "the case that the equal key is in the tree should have been already handled: childKv.key=%d , key=%d", childKv.key, key)
-/// 		if childKv.key > key {
-/// 			break
-/// 		}
-/// 		insertAtIndex++
-/// 	}
-/// 	// Here is time to insert KV. Move all the values to the right. The capacity should be already there.
-/// 	var curr, next any
-///
-/// 	curr = n.children[insertAtIndex]
-/// 	n.children[insertAtIndex] = &keyValue[K, V]{key: key, value: &value}
-/// 	n.childrenCount++
-/// 	for i := insertAtIndex + 1; i < len(n.children); i++ {
-/// 		next = n.children[i]
-/// 		n.children[i] = curr
-/// 		curr = next
-/// 	}
-/// }

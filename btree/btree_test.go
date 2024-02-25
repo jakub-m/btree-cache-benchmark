@@ -52,11 +52,17 @@ func TestInsertOverOrder(t *testing.T) {
 
 func TestInsertTwiceOverOrder(t *testing.T) {
 	b := btree.New[int, int](2)
-	b.Insert(10, 110)
-	b.Insert(20, 120)
-	b.Insert(30, 130)
-	b.Insert(40, 140)
-	b.Print(os.Stderr)
+	for _, kv := range [][2]int{
+		{10, 110},
+		{20, 120},
+		{30, 130},
+		{40, 140},
+	} {
+
+		b.Insert(kv[0], kv[1])
+		fmt.Fprintf(os.Stderr, "inserted %d\n", kv[0])
+		b.Print(os.Stderr)
+	}
 	b.IntegrityCheck()
 
 	assertFound(t, b, 10, 110)
