@@ -117,20 +117,6 @@ func (b *Btree[K, V]) replaceNodeWithTwoNodesAndSeparatorRec(childToRemove, left
 	return b.replaceNodeWithTwoNodesAndSeparatorRec(parent, newLeft, newRight, newMedian)
 }
 
-func (b *Btree[K, V]) IntegrityCheck() error {
-	checkLeafSize := func(order int, n node[K, V]) error {
-		leaf, ok := n.(*leafNode[K, V])
-		if !ok {
-			return nil
-		}
-		if len(leaf.values) > b.order {
-			return fmt.Errorf("size of the leaf node is larger than the order")
-		}
-		return nil
-	}
-	return b.root.runRecursiveUntilError(0, checkLeafSize)
-}
-
 func (b *Btree[K, V]) Print(w io.Writer) {
 	b.root.print(w, 0)
 }
