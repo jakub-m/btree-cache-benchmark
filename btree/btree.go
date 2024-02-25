@@ -53,6 +53,7 @@ type node[K cmp.Ordered, V any] interface {
 	findLeafNodeByKey(key K) *leafNode[K, V]
 	isRoot() bool
 	getParent() *innerNode[K, V]
+	setParent(parent *innerNode[K, V])
 	runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error
 	// The returned node is (optional) new root node.
 	// insertNodesToParentRec(child, left, right node[K, V], order int, median K) *innerNode[K, V]
@@ -98,16 +99,21 @@ func (b *Btree[K, V]) Insert(key K, value V) {
 func (b *Btree[K, V]) replaceNodeWithTwoNodesAndSeparatorRec(childToRemove, left, right node[K, V], separator K) *innerNode[K, V] {
 	parent := childToRemove.getParent()
 	if parent == nil {
-		return &innerNode[K, V]{
+		newParent := &innerNode[K, V]{
 			children: []node[K, V]{left, right},
 			keys:     []K{separator},
 		}
+		left.setParent(newParent)
+		right.setParent(newParent)
+		return newParent
 	}
 	parent.expandAtChild(childToRemove, left, right, separator)
 	if !parent.isOverflow(b.order) {
 		return nil
 	}
 	newLeft, newRight, newMedian := parent.splitAroundMedian()
+	assert(newLeft.getParent() == nil, "new split left should have nil parent")
+	assert(newRight.getParent() == nil, "new split right should have nil parent")
 	return b.replaceNodeWithTwoNodesAndSeparatorRec(parent, newLeft, newRight, newMedian)
 }
 
@@ -180,7 +186,6 @@ func (n *innerNode[K, V]) expandAtChild(childToRemove, left, right node[K, V], s
 	// This can be optimized to not delete but replace in place with left node.
 	n.children = slices.Delete(n.children, i, i+1)
 	n.children = slices.Insert(n.children, i, left, right)
-	n.keys = slices.Delete(n.keys, i, i+1)
 	n.keys = slices.Insert(n.keys, i, separator)
 }
 
@@ -218,18 +223,21 @@ func (n *innerNode[K, V]) splitAroundMedian() (*innerNode[K, V], *innerNode[K, V
 	newLeft := &innerNode[K, V]{
 		children: leftChildren,
 		keys:     leftKeys,
-		parent:   n,
 	}
 	newRight := &innerNode[K, V]{
 		children: rightChildren,
 		keys:     rightKeys,
-		parent:   n,
 	}
 	return newLeft, newRight, medianValue
 }
 
 func (n *innerNode[K, V]) getParent() *innerNode[K, V] {
 	return n.parent
+}
+
+func (n *innerNode[K, V]) setParent(p *innerNode[K, V]) {
+	assert(n.parent == nil, "there should be no code path setting non-nil parent")
+	n.parent = p
 }
 
 ////////////////////////////////////////
@@ -262,6 +270,11 @@ func (n *leafNode[K, V]) isOverflow(order int) bool {
 
 func (n *leafNode[K, V]) getParent() *innerNode[K, V] {
 	return n.parent
+}
+
+func (n *leafNode[K, V]) setParent(p *innerNode[K, V]) {
+	assert(n.parent == nil, "there should be no code path setting non-nil parent")
+	n.parent = p
 }
 
 func (n *leafNode[K, V]) insertIgnoringOrder(key K, value V) {
