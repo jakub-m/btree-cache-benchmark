@@ -107,7 +107,10 @@ func (b *Btree[K, V]) replaceNodeWithTwoNodesAndSeparatorRec(childToRemove, left
 		right.setParent(newParent)
 		return newParent
 	}
+	assert(!parent.isOverflow(b.order), "parent must not be overflow at this point")
 	parent.expandAtChild(childToRemove, left, right, separator)
+	left.setParent(parent)
+	right.setParent(parent)
 	if !parent.isOverflow(b.order) {
 		return nil
 	}
@@ -210,9 +213,15 @@ func (n *innerNode[K, V]) splitAroundMedian() (*innerNode[K, V], *innerNode[K, V
 		children: leftChildren,
 		keys:     leftKeys,
 	}
+	for _, c := range leftChildren {
+		c.setParent(newLeft)
+	}
 	newRight := &innerNode[K, V]{
 		children: rightChildren,
 		keys:     rightKeys,
+	}
+	for _, c := range rightChildren {
+		c.setParent(newRight)
 	}
 	return newLeft, newRight, medianValue
 }
@@ -222,7 +231,6 @@ func (n *innerNode[K, V]) getParent() *innerNode[K, V] {
 }
 
 func (n *innerNode[K, V]) setParent(p *innerNode[K, V]) {
-	assert(n.parent == nil, "there should be no code path setting non-nil parent")
 	n.parent = p
 }
 
@@ -259,7 +267,6 @@ func (n *leafNode[K, V]) getParent() *innerNode[K, V] {
 }
 
 func (n *leafNode[K, V]) setParent(p *innerNode[K, V]) {
-	assert(n.parent == nil, "there should be no code path setting non-nil parent")
 	n.parent = p
 }
 

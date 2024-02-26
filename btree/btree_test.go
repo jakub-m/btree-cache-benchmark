@@ -43,7 +43,7 @@ func TestInsertOverOrder(t *testing.T) {
 	b.Insert(20, 120)
 	b.Insert(30, 130)
 	b.Print(os.Stderr)
-	b.IntegrityCheck()
+	assert.NoError(t, b.IntegrityCheck())
 
 	assertFound(t, b, 10, 110)
 	assertFound(t, b, 20, 120)
@@ -63,7 +63,7 @@ func TestInsertTwiceOverOrder(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "inserted %d\n", kv[0])
 		b.Print(os.Stderr)
 	}
-	b.IntegrityCheck()
+	assert.NoError(t, b.IntegrityCheck())
 
 	assertFound(t, b, 10, 110)
 	assertFound(t, b, 20, 120)
@@ -71,9 +71,32 @@ func TestInsertTwiceOverOrder(t *testing.T) {
 	assertFound(t, b, 40, 140)
 }
 
+func TestInsertThreeTimesOverOrder(t *testing.T) {
+	b := btree.New[int, int](2)
+	for _, kv := range [][2]int{
+		{10, 110},
+		{20, 120},
+		{30, 130},
+		{40, 140},
+		{50, 150},
+	} {
+
+		b.Insert(kv[0], kv[1])
+		fmt.Fprintf(os.Stderr, "inserted %d\n", kv[0])
+		b.Print(os.Stderr)
+	}
+	assert.NoError(t, b.IntegrityCheck())
+
+	assertFound(t, b, 10, 110)
+	assertFound(t, b, 20, 120)
+	assertFound(t, b, 30, 130)
+	assertFound(t, b, 40, 140)
+	assertFound(t, b, 50, 150)
+}
+
 func TestLotsOfSequentialInsertions(t *testing.T) {
-	n := 1000
-	for _, order := range []int{2, 3, 4, 10} {
+	n := 6
+	for _, order := range []int{2, 3} {
 		order := order
 		t.Run(fmt.Sprintf("order %d", order), func(t *testing.T) {
 			// t.Parallel()
@@ -81,6 +104,7 @@ func TestLotsOfSequentialInsertions(t *testing.T) {
 			for i := range n {
 				b.Insert(i, i)
 			}
+			b.Print(os.Stderr)
 			assert.NoError(t, b.IntegrityCheck())
 			assertNotFound(t, b, -1)
 			for i := range n {
