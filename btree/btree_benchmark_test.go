@@ -11,47 +11,61 @@ const (
 	nValues = 100_000
 )
 
+const (
+	sequenceTypeRange         = "range"
+	sequenceTypeShuffledRange = "shuffledRange"
+	sequenceTypeRandom        = "random"
+)
+
 var orders []int
 var seed *rand.Rand
+var sequenceTypes []string
 
 func init() {
 	seed = rand.New(rand.NewSource(0))
-	orders = []int{2, 3, 6, 10}
-}
-
-func BenchmarkInsertSequence(t *testing.B) {
-	sequence := getSequence(nValues)
-	for _, order := range orders {
-		benchmarkInsert(t, sequence, order)
+	orders = []int{2, 3, 6, 10, 23}
+	sequenceTypes = []string{
+		sequenceTypeRange,
+		sequenceTypeShuffledRange,
+		sequenceTypeRandom,
 	}
 }
 
-func BenchmarkInsertSequenceShuffled(t *testing.B) {
-	sequence := getSequence(nValues)
-	shuffle(sequence)
+func BenchmarkInsert(t *testing.B) {
 	for _, order := range orders {
-		benchmarkInsert(t, sequence, order)
+		for _, s := range sequenceTypes {
+			runBenchmarkForInsert(t, s, order)
+		}
 	}
 }
 
-func BenchmarkInsertRandom(t *testing.B) {
-	sequence := getRandomArray(nValues)
-	for _, order := range orders {
-		benchmarkInsert(t, sequence, order)
-	}
-}
-
-func benchmarkInsert(t *testing.B, sequence []int, order int) {
-	name := fmt.Sprintf("n_%d_order_%d", len(sequence), order)
+func runBenchmarkForInsert(t *testing.B, sequenceType string, order int) {
+	name := fmt.Sprintf("n:%d_order:%d_seq:%s", nValues, order, sequenceType)
+	sequence := getSequence(nValues, sequenceType)
 	t.Run(name, func(b *testing.B) {
-		t := btree.New[int, int](order)
-		for _, value := range sequence {
-			t.Insert(value, value)
+		for range b.N {
+			t := btree.New[int, int](order)
+			for _, value := range sequence {
+				t.Insert(value, value)
+			}
 		}
 	})
 }
 
-func getSequence(n int) []int {
+func getSequence(n int, t string) []int {
+	switch t {
+	case sequenceTypeRange:
+		return getSequenceRange(n)
+	case sequenceTypeShuffledRange:
+		s := getSequenceRange(n)
+		shuffle(s)
+		return s
+	case sequenceTypeRandom:
+		return getRandomArray(n)
+	}
+	panic("bad type: " + t)
+}
+func getSequenceRange(n int) []int {
 	s := make([]int, n)
 	for i := range n {
 		s[i] = i
