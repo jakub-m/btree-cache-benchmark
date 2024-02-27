@@ -1,3 +1,5 @@
+//go:build assertions
+
 package btree
 
 import "fmt"
