@@ -17,8 +17,8 @@ func main() {
 	flagOrder := 2
 	flag.IntVar(&flagN, "n", 1000000, "number of values in the sequence")
 	flag.BoolVar(&flagShuffle, "shuffle", false, "shuffle, can be used to shuffle sequence of N values")
-	flag.BoolVar(&flagRandom, "r", false, "random integers")
-	flag.IntVar(&flagOrder, "m", 2, "order of btree")
+	flag.BoolVar(&flagRandom, "random", false, "random integers")
+	flag.IntVar(&flagOrder, "order", 2, "order of btree")
 	flag.Parse()
 	ac := cacheAccessCounter{
 		lastAccess: make(map[any]int),
