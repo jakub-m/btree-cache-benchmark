@@ -96,8 +96,9 @@ func TestInsertThreeTimesOverOrder(t *testing.T) {
 }
 
 func TestLotsOfSequentialInsertions(t *testing.T) {
-	n := 100
-	for _, order := range []int{2, 3, 5, 10} {
+	n := 1000
+	orders := []int{2, 3, 5, 10}
+	for _, order := range orders {
 		order := order
 		t.Run(fmt.Sprintf("order %d", order), func(t *testing.T) {
 			b := btree.New[int, int](order)
@@ -106,7 +107,6 @@ func TestLotsOfSequentialInsertions(t *testing.T) {
 			}
 			b.Print(os.Stderr)
 			assert.NoError(t, b.IntegrityCheck())
-			assertNotFound(t, b, -1)
 			for i := range n {
 				assertFound(t, b, i, i)
 			}

@@ -36,7 +36,7 @@ func (b *Btree[K, V]) integrityCheckLeafSize(level int, n node[K, V]) error {
 	if !ok {
 		return nil
 	}
-	if len(leaf.values) > b.order {
+	if len(leaf.pairs) > b.order {
 		return fmt.Errorf("size of the leaf node is larger than the order")
 	}
 	return nil
@@ -99,8 +99,8 @@ func (c *keyPerNodeChecker[K, V]) collectKeysPerNode(n node[K, V]) {
 	switch t := n.(type) {
 	case *leafNode[K, V]:
 		keys := []K{}
-		for k := range t.values {
-			keys = append(keys, k)
+		for _, p := range t.pairs {
+			keys = append(keys, p.key)
 		}
 		assert(c.keysPerNode[n] == nil)
 		c.keysPerNode[n] = keys

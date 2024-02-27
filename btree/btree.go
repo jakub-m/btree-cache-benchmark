@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -74,8 +75,7 @@ func New[K ~int, V any](order int) *Btree[K, V] {
 
 func (b *Btree[K, V]) Find(key K) (V, bool) {
 	if n := b.root.findLeafNodeByKey(key); n != nil {
-		value, ok := n.values[key]
-		return value, ok
+		return n.getValue(key)
 	}
 	var zero V
 	return zero, false
@@ -85,7 +85,7 @@ func (b *Btree[K, V]) Insert(key K, value V) {
 	// https://en.wikipedia.org/wiki/B-tree#Insertion
 	leafNode := b.root.findLeafNodeByKey(key)
 	assert(leafNode != nil, "there always must be some leaf node, not found for key %s", key)
-	leafNode.insertIgnoringOrder(key, value)
+	leafNode.insertSorted(key, value)
 	if !leafNode.isOverflow(b.order) {
 		return
 	}
@@ -241,13 +241,18 @@ func (n *innerNode[K, V]) setParent(p *innerNode[K, V]) {
 
 // leafNode contains no children, but arbitrary values stored under keys.
 type leafNode[K cmp.Ordered, V any] struct {
-	values map[K]V
+	pairs  []pair[K, V]
 	parent *innerNode[K, V]
+}
+
+type pair[K any, V any] struct {
+	key   K
+	value V
 }
 
 func newLeafNode[K cmp.Ordered, V any]() *leafNode[K, V] {
 	return &leafNode[K, V]{
-		values: make(map[K]V),
+		pairs: []pair[K, V]{},
 	}
 }
 
@@ -255,12 +260,23 @@ func (n *leafNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 	return n
 }
 
+func (n *leafNode[K, V]) getValue(key K) (V, bool) {
+	pairs := pairSlice[K, V](n.pairs)
+	assert(pairs.isSorted(), "expected pairs to be sorted")
+	if i := pairs.bisect(key); i == -1 || n.pairs[i].key != key {
+		var zero V
+		return zero, false
+	} else {
+		return n.pairs[i].value, true
+	}
+}
+
 func (n *leafNode[K, V]) isRoot() bool {
 	return n.parent == nil
 }
 
 func (n *leafNode[K, V]) isOverflow(order int) bool {
-	return len(n.values) > order
+	return len(n.pairs) > order
 }
 
 func (n *leafNode[K, V]) getParent() *innerNode[K, V] {
@@ -271,33 +287,41 @@ func (n *leafNode[K, V]) setParent(p *innerNode[K, V]) {
 	n.parent = p
 }
 
-func (n *leafNode[K, V]) insertIgnoringOrder(key K, value V) {
-	n.values[key] = value
+// forceAppend adds key and value regardless if this causes overflow or not.
+func (n *leafNode[K, V]) insertSorted(key K, value V) {
+	pairs := pairSlice[K, V](n.pairs)
+	assert(pairs.isSorted(), "pairs should be sorted before insert")
+	i := pairs.bisect(key)
+	newPair := pair[K, V]{key: key, value: value}
+	if i == -1 {
+		n.pairs = append(n.pairs, newPair)
+	} else {
+		n.pairs = slices.Insert(n.pairs, i, newPair)
+	}
+	assert(pairSlice[K, V](n.pairs).isSorted(), "pairs should be sorted after insert")
 }
 
 func (n *leafNode[K, V]) splitAroundMedian() (*leafNode[K, V], *leafNode[K, V], K) {
 	median := n.medianKey()
 	left, right := newLeafNode[K, V](), newLeafNode[K, V]()
-	insertToLeftOrRight := func(k K, v V) {
-		if k < median {
-			left.values[k] = v
+	insertToLeftOrRight := func(p pair[K, V]) {
+		if p.key < median {
+			left.pairs = append(left.pairs, p)
 		} else {
-			right.values[k] = v
+			right.pairs = append(right.pairs, p)
 		}
 	}
-	for k, v := range n.values {
-		insertToLeftOrRight(k, v)
+	for _, p := range n.pairs {
+		insertToLeftOrRight(p)
 	}
+	assert(pairSlice[K, V](left.pairs).isSorted(), "left should be sorted")
+	assert(pairSlice[K, V](right.pairs).isSorted(), "left should be sorted")
 	return left, right, median
 }
 
 func (n *leafNode[K, V]) medianKey() K {
-	keys := make([]K, 0, len(n.values))
-	for k := range n.values {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys[len(keys)/2]
+	assert(pairSlice[K, V](n.pairs).isSorted(), "expecetd keys to be sorted")
+	return n.pairs[len(n.pairs)/2].key
 }
 
 func (n *leafNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error {
@@ -309,7 +333,34 @@ func (n *leafNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n
 
 func (n *leafNode[K, V]) print(w io.Writer, indent int) {
 	spaces := strings.Repeat(" ", indent)
-	for k, v := range n.values {
-		fmt.Fprintf(w, "%s[%v]:%v\n", spaces, k, v)
+	for _, p := range n.pairs {
+		fmt.Fprintf(w, "%s[%v]:%v\n", spaces, p.key, p.value)
 	}
+}
+
+type pairSlice[K cmp.Ordered, V any] []pair[K, V]
+
+func (s pairSlice[K, V]) isSorted() bool {
+	if len(s) == 0 {
+		return true
+	}
+	prev := s[0].key
+	for _, p := range s {
+		if p.key < prev {
+			return false
+		}
+		prev = p.key
+	}
+	return true
+}
+
+// bisect returns index of the key equal to seeked key or the first larger than seeked key.
+func (s pairSlice[K, V]) bisect(key K) int {
+	i := sort.Search(len(s), func(i int) bool {
+		return s[i].key >= key
+	})
+	if i == len(s) {
+		return -1
+	}
+	return i
 }
