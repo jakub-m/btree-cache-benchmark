@@ -151,6 +151,7 @@ func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 	for i, separator := range n.keys {
 		if separator > seekedKey {
 			foundNodeIndex = i
+			break
 		}
 	}
 	// Reached the last range.

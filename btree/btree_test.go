@@ -4,6 +4,7 @@ import (
 	"btree-cache-benchmark/btree"
 	"cmp"
 	"fmt"
+	"math/rand"
 	"os"
 	"testing"
 
@@ -95,11 +96,10 @@ func TestInsertThreeTimesOverOrder(t *testing.T) {
 }
 
 func TestLotsOfSequentialInsertions(t *testing.T) {
-	n := 6
-	for _, order := range []int{2, 3} {
+	n := 100
+	for _, order := range []int{2, 3, 5, 10} {
 		order := order
 		t.Run(fmt.Sprintf("order %d", order), func(t *testing.T) {
-			// t.Parallel()
 			b := btree.New[int, int](order)
 			for i := range n {
 				b.Insert(i, i)
@@ -117,7 +117,29 @@ func TestLotsOfSequentialInsertions(t *testing.T) {
 }
 
 func TestLotsOfRandomInsertions(t *testing.T) {
-	t.Skip("here should have lots of random insertions")
+	r := rand.New(rand.NewSource(0))
+	values := []int{}
+	for i := range 1000 {
+		values = append(values, i)
+	}
+	r.Shuffle(len(values), func(i, j int) { values[i], values[j] = values[j], values[i] })
+	for _, order := range []int{2, 3, 5, 10} {
+		order := order
+		t.Run(fmt.Sprintf("order %d", order), func(t *testing.T) {
+			b := btree.New[int, int](order)
+			for _, v := range values {
+				b.Insert(v, v)
+			}
+			b.Print(os.Stderr)
+			assert.NoError(t, b.IntegrityCheck())
+			assertNotFound(t, b, -1)
+			for _, v := range values {
+				assertFound(t, b, v, v)
+			}
+			assertNotFound(t, b, -1)
+			assertNotFound(t, b, len(values))
+		})
+	}
 }
 
 func assertFound[K cmp.Ordered, V any](t *testing.T, b *btree.Btree[K, V], key K, expected V) {
