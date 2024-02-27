@@ -1,4 +1,4 @@
-bin=bin/main
+bin=bin/btree_hist
 gofiles=$(shell find . -name \*.go)
 $(bin): $(gofiles)
 	go build -o $(bin) main.go

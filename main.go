@@ -3,33 +3,47 @@ package main
 import (
 	"btree-cache-benchmark/btree"
 	"btree-cache-benchmark/utils"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"slices"
-	"testing"
 )
 
 func main() {
-	b := btree.New[int, int](3)
-	b.Insert(10, 10)
-	b.Insert(20, 20)
-	// b.Insert(30, 30)
-	// b.Insert(40, 40)
-	b.Print(os.Stdout)
-}
-
-func TestCountAccess(t *testing.T) {
+	flagN := 0
+	flagShuffle := false
+	flagRandom := false
+	flagOrder := 2
+	flag.IntVar(&flagN, "n", 1000000, "number of values in the sequence")
+	flag.BoolVar(&flagShuffle, "shuffle", false, "shuffle, can be used to shuffle sequence of N values")
+	flag.BoolVar(&flagRandom, "r", false, "random integers")
+	flag.IntVar(&flagOrder, "m", 2, "order of btree")
+	flag.Parse()
 	ac := cacheAccessCounter{
 		lastAccess: make(map[any]int),
 		hist:       make(map[int]int),
 	}
-	b := btree.NewWithAccessCounter[int, int](2, ac.count)
-	values := utils.GetSequenceRange(100_000)
-	utils.Shuffle(values)
+	b := btree.NewWithAccessCounter[int, int](flagOrder, ac.count)
+	var values []int
+	summary := "#"
+	summary += fmt.Sprint(" n=", flagN)
+
+	if flagRandom {
+		summary += " random"
+		values = utils.GetRandomArray(flagN)
+	} else {
+		summary += " sequence"
+		values = utils.GetSequenceRange(flagN)
+	}
+	if flagShuffle {
+		summary += " shuffled"
+		utils.Shuffle(values)
+	}
 	for _, v := range values {
 		b.Insert(v, v)
 	}
+	fmt.Fprintln(os.Stderr, summary)
 	ac.writeHistogram(os.Stdout)
 }
 
@@ -52,12 +66,13 @@ func (c *cacheAccessCounter) count(n any) {
 
 func (c *cacheAccessCounter) writeHistogram(w io.Writer) {
 	timestamps := []int{}
-	for _, ts := range c.hist {
+	for ts := range c.hist {
 		timestamps = append(timestamps, ts)
 	}
 	slices.Sort(timestamps)
 	fmt.Fprintf(w, "ts\tcount\n")
 	for _, ts := range timestamps {
-		fmt.Fprintf(w, "%d\t%d\n", ts, c.hist[ts])
+		cnt := c.hist[ts]
+		fmt.Fprintf(w, "%d\t%d\n", ts, cnt)
 	}
 }
