@@ -6,39 +6,14 @@ import (
 	"slices"
 )
 
-// TODO add integrity check checking values in sub-trees
-// TODO add integrity check for leafs being at the same depth
 func (b *Btree[K, V]) IntegrityCheck() error {
-	keysPerNode := make(map[node[K, V]][]K)
-	b.collectLeafKeysPerNode(b.root, keysPerNode)
-	checkKeysPerNode := func(level int, n node[K, V]) error {
-		inner, ok := n.(*innerNode[K, V])
-		if !ok {
-			return nil
-		}
-		for i, c := range inner.children {
-			keysForChild := keysPerNode[c]
-			assert(keysForChild != nil)
-			leftmost := i == 0
-			rightmost := i == len(inner.keys)
-			minKey := slices.Min(keysForChild)
-			maxKey := slices.Max(keysForChild)
-			if !leftmost && !(minKey >= inner.keys[i-1]) {
-				return fmt.Errorf("bad min key")
-			}
-			if !rightmost && !(maxKey < inner.keys[i]) {
-				return fmt.Errorf("mad max key")
-			}
-		}
-		return nil
-	}
-
+	keyPerNodeChecker := newKeyPerNodeChecker[K, V](b.root)
 	chained := chainIntegrityCheck[K, V](
 		b.integrityCheckLeafSize,
 		b.integrityCheckKeyAndChildrenLen,
 		b.integrityCheckAllButRootHaveParent,
 		b.integrityCheckParentPointsCorrectly,
-		checkKeysPerNode,
+		keyPerNodeChecker.check,
 	)
 	return b.root.runRecursiveUntilError(0, chained)
 }
@@ -106,24 +81,58 @@ func (b *Btree[K, V]) integrityCheckParentPointsCorrectly(level int, n node[K, V
 	return nil
 }
 
-func (b *Btree[K, V]) collectLeafKeysPerNode(n node[K, V], keysPerNode map[node[K, V]][]K) {
+type keyPerNodeChecker[K cmp.Ordered, V any] struct {
+	keysPerNode map[node[K, V]][]K
+}
+
+func newKeyPerNodeChecker[K cmp.Ordered, V any](n node[K, V]) *keyPerNodeChecker[K, V] {
+	c := &keyPerNodeChecker[K, V]{
+		keysPerNode: make(map[node[K, V]][]K),
+	}
+	c.collectKeysPerNode(n)
+	return c
+}
+
+func (c *keyPerNodeChecker[K, V]) collectKeysPerNode(n node[K, V]) {
 	switch t := n.(type) {
 	case *leafNode[K, V]:
 		keys := []K{}
 		for k := range t.values {
 			keys = append(keys, k)
 		}
-		assert(keysPerNode[n] == nil)
-		keysPerNode[n] = keys
+		assert(c.keysPerNode[n] == nil)
+		c.keysPerNode[n] = keys
 	case *innerNode[K, V]:
 		keys := []K{}
-		for _, c := range t.children {
-			b.collectLeafKeysPerNode(c, keysPerNode)
-			subKeys := keysPerNode[c]
+		for _, child := range t.children {
+			c.collectKeysPerNode(child)
+			subKeys := c.keysPerNode[child]
 			assert(subKeys != nil)
 			keys = append(keys, subKeys...)
 		}
-		assert(keysPerNode[n] == nil)
-		keysPerNode[n] = keys
+		assert(c.keysPerNode[n] == nil)
+		c.keysPerNode[n] = keys
 	}
+}
+
+func (c *keyPerNodeChecker[K, V]) check(level int, n node[K, V]) error {
+	inner, ok := n.(*innerNode[K, V])
+	if !ok {
+		return nil
+	}
+	for i, child := range inner.children {
+		keysForChild := c.keysPerNode[child]
+		assert(keysForChild != nil)
+		leftmost := i == 0
+		rightmost := i == len(inner.keys)
+		minKey := slices.Min(keysForChild)
+		maxKey := slices.Max(keysForChild)
+		if !leftmost && !(minKey >= inner.keys[i-1]) {
+			return fmt.Errorf("bad min key")
+		}
+		if !rightmost && !(maxKey < inner.keys[i]) {
+			return fmt.Errorf("mad max key")
+		}
+	}
+	return nil
 }
