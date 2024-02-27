@@ -8,12 +8,14 @@ import (
 
 func (b *Btree[K, V]) IntegrityCheck() error {
 	keyPerNodeChecker := newKeyPerNodeChecker[K, V](b.root)
+	leafDepthChecker := newLeafDepthChecker[K, V]()
 	chained := chainIntegrityCheck[K, V](
 		b.integrityCheckLeafSize,
 		b.integrityCheckKeyAndChildrenLen,
 		b.integrityCheckAllButRootHaveParent,
 		b.integrityCheckParentPointsCorrectly,
 		keyPerNodeChecker.check,
+		leafDepthChecker.check,
 	)
 	return b.root.runRecursiveUntilError(0, chained)
 }
@@ -133,6 +135,30 @@ func (c *keyPerNodeChecker[K, V]) check(level int, n node[K, V]) error {
 		if !rightmost && !(maxKey < inner.keys[i]) {
 			return fmt.Errorf("mad max key")
 		}
+	}
+	return nil
+}
+
+type leafDepthChecker[K cmp.Ordered, V any] struct {
+	leafNodeDepth int
+}
+
+func newLeafDepthChecker[K cmp.Ordered, V any]() *leafDepthChecker[K, V] {
+	return &leafDepthChecker[K, V]{
+		leafNodeDepth: -1,
+	}
+}
+
+func (c *leafDepthChecker[K, V]) check(level int, n node[K, V]) error {
+	_, ok := n.(*leafNode[K, V])
+	if !ok {
+		return nil
+	}
+	if c.leafNodeDepth == -1 {
+		c.leafNodeDepth = level
+	}
+	if c.leafNodeDepth != level {
+		return fmt.Errorf("leaf node level differs, was %d, is %d", c.leafNodeDepth, level)
 	}
 	return nil
 }
