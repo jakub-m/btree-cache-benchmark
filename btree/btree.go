@@ -31,7 +31,8 @@ type Btree[K cmp.Ordered, V any] struct {
 	// The maximum number of child nodes of a node.
 	order int
 	// either innerNode or leafNode
-	root node[K, V]
+	root          node[K, V]
+	accessCounter accessCounter
 }
 
 // node per Knuth (wiki, m is order):
@@ -59,6 +60,7 @@ type node[K cmp.Ordered, V any] interface {
 	// The returned node is (optional) new root node.
 	// insertNodesToParentRec(child, left, right node[K, V], order int, median K) *innerNode[K, V]
 	print(w io.Writer, indent int)
+	countAccess()
 }
 
 ////////////////////////////////////////
@@ -66,10 +68,15 @@ type node[K cmp.Ordered, V any] interface {
 ////////////////////////////////////////
 
 func New[K ~int, V any](order int) *Btree[K, V] {
-	root := newLeafNode[K, V]()
+	return NewWithAccessCounter[K, V](order, dummyAccessCounter)
+}
+
+func NewWithAccessCounter[K ~int, V any](order int, ac accessCounter) *Btree[K, V] {
+	root := newLeafNode[K, V](ac)
 	return &Btree[K, V]{
-		order: order,
-		root:  root,
+		order:         order,
+		root:          root,
+		accessCounter: ac,
 	}
 }
 
@@ -100,8 +107,9 @@ func (b *Btree[K, V]) replaceNodeWithTwoNodesAndSeparatorRec(childToRemove, left
 	parent := childToRemove.getParent()
 	if parent == nil {
 		newParent := &innerNode[K, V]{
-			children: []node[K, V]{left, right},
-			keys:     []K{separator},
+			children:      []node[K, V]{left, right},
+			keys:          []K{separator},
+			accessCounter: b.accessCounter,
 		}
 		left.setParent(newParent)
 		right.setParent(newParent)
@@ -134,8 +142,9 @@ type innerNode[K cmp.Ordered, V any] struct {
 	// keys separate children. For m children there is always m-1 keys.
 	// Key i is the key after child i, like:
 	//   child[0], key[0], child[1], key[1], child[2], key[2], child[3]
-	keys   []K
-	parent *innerNode[K, V]
+	keys          []K
+	parent        *innerNode[K, V]
+	accessCounter accessCounter
 }
 
 func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
@@ -147,6 +156,7 @@ func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 	//           [10,20)   |        |
 	//                     [20, 30) |
 	//                              [30, +inf)
+	n.countAccess()
 	foundNodeIndex := len(n.keys) // if no key found, use the last range
 	for i, separator := range n.keys {
 		if separator > seekedKey {
@@ -160,15 +170,18 @@ func (n *innerNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
 }
 
 func (n *innerNode[K, V]) isRoot() bool {
+	n.countAccess()
 	return n.parent == nil
 }
 
 func (n *innerNode[K, V]) isOverflow(order int) bool {
+	n.countAccess()
 	assert(len(n.children) <= order+1, "there should be no path that results in child len > one more than order, len(children)=%d, order=%d", len(n.children), order)
 	return len(n.children) > order
 }
 
 func (n *innerNode[K, V]) expandAtChild(childToRemove, left, right node[K, V], separator K) {
+	n.countAccess()
 	i := slices.Index(n.children, childToRemove)
 	if i == -1 {
 		panic("BUG! Could not find child!")
@@ -180,6 +193,7 @@ func (n *innerNode[K, V]) expandAtChild(childToRemove, left, right node[K, V], s
 }
 
 func (n *innerNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error {
+	n.countAccess()
 	if err := fun(level, n); err != nil {
 		return err
 	}
@@ -192,6 +206,7 @@ func (n *innerNode[K, V]) runRecursiveUntilError(level int, fun func(level int, 
 }
 
 func (n *innerNode[K, V]) print(w io.Writer, indent int) {
+	n.countAccess()
 	spaces := strings.Repeat(" ", indent)
 	fmt.Fprintf(w, "%s--\n", spaces)
 	for i, key := range n.keys {
@@ -203,6 +218,7 @@ func (n *innerNode[K, V]) print(w io.Writer, indent int) {
 }
 
 func (n *innerNode[K, V]) splitAroundMedian() (*innerNode[K, V], *innerNode[K, V], K) {
+	n.countAccess()
 	assert(slices.IsSorted(n.keys), "expected keys to be sorted, was: %v", n.keys)
 	iMedian := len(n.keys) / 2
 	medianValue := n.keys[iMedian]
@@ -211,15 +227,17 @@ func (n *innerNode[K, V]) splitAroundMedian() (*innerNode[K, V], *innerNode[K, V
 	rightChildren := slices.Clone(n.children[iMedian+1:])
 	rightKeys := slices.Clone(n.keys[iMedian+1:])
 	newLeft := &innerNode[K, V]{
-		children: leftChildren,
-		keys:     leftKeys,
+		children:      leftChildren,
+		keys:          leftKeys,
+		accessCounter: n.accessCounter,
 	}
 	for _, c := range leftChildren {
 		c.setParent(newLeft)
 	}
 	newRight := &innerNode[K, V]{
-		children: rightChildren,
-		keys:     rightKeys,
+		children:      rightChildren,
+		keys:          rightKeys,
+		accessCounter: n.accessCounter,
 	}
 	for _, c := range rightChildren {
 		c.setParent(newRight)
@@ -228,11 +246,17 @@ func (n *innerNode[K, V]) splitAroundMedian() (*innerNode[K, V], *innerNode[K, V
 }
 
 func (n *innerNode[K, V]) getParent() *innerNode[K, V] {
+	n.countAccess()
 	return n.parent
 }
 
 func (n *innerNode[K, V]) setParent(p *innerNode[K, V]) {
+	n.countAccess()
 	n.parent = p
+}
+
+func (n *innerNode[K, V]) countAccess() {
+	n.accessCounter(n)
 }
 
 ////////////////////////////////////////
@@ -241,8 +265,9 @@ func (n *innerNode[K, V]) setParent(p *innerNode[K, V]) {
 
 // leafNode contains no children, but arbitrary values stored under keys.
 type leafNode[K cmp.Ordered, V any] struct {
-	pairs  []pair[K, V]
-	parent *innerNode[K, V]
+	pairs         []pair[K, V]
+	parent        *innerNode[K, V]
+	accessCounter accessCounter
 }
 
 type pair[K any, V any] struct {
@@ -250,17 +275,20 @@ type pair[K any, V any] struct {
 	value V
 }
 
-func newLeafNode[K cmp.Ordered, V any]() *leafNode[K, V] {
+func newLeafNode[K cmp.Ordered, V any](ac accessCounter) *leafNode[K, V] {
 	return &leafNode[K, V]{
-		pairs: []pair[K, V]{},
+		pairs:         []pair[K, V]{},
+		accessCounter: ac,
 	}
 }
 
 func (n *leafNode[K, V]) findLeafNodeByKey(seekedKey K) *leafNode[K, V] {
+	n.countAccess()
 	return n
 }
 
 func (n *leafNode[K, V]) getValue(key K) (V, bool) {
+	n.countAccess()
 	pairs := pairSlice[K, V](n.pairs)
 	assert(pairs.isSorted(), "expected pairs to be sorted")
 	if i := pairs.bisect(key); i == -1 || n.pairs[i].key != key {
@@ -272,23 +300,28 @@ func (n *leafNode[K, V]) getValue(key K) (V, bool) {
 }
 
 func (n *leafNode[K, V]) isRoot() bool {
+	n.countAccess()
 	return n.parent == nil
 }
 
 func (n *leafNode[K, V]) isOverflow(order int) bool {
+	n.countAccess()
 	return len(n.pairs) > order
 }
 
 func (n *leafNode[K, V]) getParent() *innerNode[K, V] {
+	n.countAccess()
 	return n.parent
 }
 
 func (n *leafNode[K, V]) setParent(p *innerNode[K, V]) {
+	n.countAccess()
 	n.parent = p
 }
 
 // forceAppend adds key and value regardless if this causes overflow or not.
 func (n *leafNode[K, V]) insertSorted(key K, value V) {
+	n.countAccess()
 	pairs := pairSlice[K, V](n.pairs)
 	assert(pairs.isSorted(), "pairs should be sorted before insert")
 	i := pairs.bisect(key)
@@ -302,8 +335,9 @@ func (n *leafNode[K, V]) insertSorted(key K, value V) {
 }
 
 func (n *leafNode[K, V]) splitAroundMedian() (*leafNode[K, V], *leafNode[K, V], K) {
+	n.countAccess()
 	median := n.medianKey()
-	left, right := newLeafNode[K, V](), newLeafNode[K, V]()
+	left, right := newLeafNode[K, V](n.accessCounter), newLeafNode[K, V](n.accessCounter)
 	insertToLeftOrRight := func(p pair[K, V]) {
 		if p.key < median {
 			left.pairs = append(left.pairs, p)
@@ -320,11 +354,13 @@ func (n *leafNode[K, V]) splitAroundMedian() (*leafNode[K, V], *leafNode[K, V], 
 }
 
 func (n *leafNode[K, V]) medianKey() K {
+	n.countAccess()
 	assert(pairSlice[K, V](n.pairs).isSorted(), "expecetd keys to be sorted")
 	return n.pairs[len(n.pairs)/2].key
 }
 
 func (n *leafNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n node[K, V]) error) error {
+	n.countAccess()
 	if err := fun(level, n); err != nil {
 		return err
 	}
@@ -332,10 +368,15 @@ func (n *leafNode[K, V]) runRecursiveUntilError(level int, fun func(level int, n
 }
 
 func (n *leafNode[K, V]) print(w io.Writer, indent int) {
+	n.countAccess()
 	spaces := strings.Repeat(" ", indent)
 	for _, p := range n.pairs {
 		fmt.Fprintf(w, "%s[%v]:%v\n", spaces, p.key, p.value)
 	}
+}
+
+func (n *leafNode[K, V]) countAccess() {
+	n.accessCounter(n)
 }
 
 type pairSlice[K cmp.Ordered, V any] []pair[K, V]
@@ -364,3 +405,8 @@ func (s pairSlice[K, V]) bisect(key K) int {
 	}
 	return i
 }
+
+// accessCounter is used to inform that a particular node was accessed for sake of profiling.
+type accessCounter func(n any)
+
+func dummyAccessCounter(n any) {}

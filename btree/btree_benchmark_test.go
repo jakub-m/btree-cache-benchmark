@@ -2,8 +2,8 @@ package btree_test
 
 import (
 	"btree-cache-benchmark/btree"
+	"btree-cache-benchmark/utils"
 	"fmt"
-	"math/rand"
 	"testing"
 )
 
@@ -18,11 +18,9 @@ const (
 )
 
 var orders []int
-var seed *rand.Rand
 var sequenceTypes []string
 
 func init() {
-	seed = rand.New(rand.NewSource(0))
 	orders = []int{2, 3, 6, 10, 23}
 	sequenceTypes = []string{
 		sequenceTypeRange,
@@ -55,34 +53,13 @@ func runBenchmarkForInsert(t *testing.B, sequenceType string, order int) {
 func getSequence(n int, t string) []int {
 	switch t {
 	case sequenceTypeRange:
-		return getSequenceRange(n)
+		return utils.GetSequenceRange(n)
 	case sequenceTypeShuffledRange:
-		s := getSequenceRange(n)
-		shuffle(s)
+		s := utils.GetSequenceRange(n)
+		utils.Shuffle(s)
 		return s
 	case sequenceTypeRandom:
-		return getRandomArray(n)
+		return utils.GetRandomArray(n)
 	}
 	panic("bad type: " + t)
-}
-func getSequenceRange(n int) []int {
-	s := make([]int, n)
-	for i := range n {
-		s[i] = i
-	}
-	return s
-}
-
-func getRandomArray(n int) []int {
-	s := make([]int, n)
-	for i := range n {
-		s[i] = seed.Int()
-	}
-	return s
-}
-
-func shuffle[T any](s []T) {
-	seed.Shuffle(len(s), func(i, j int) {
-		s[i], s[j] = s[j], s[i]
-	})
 }
