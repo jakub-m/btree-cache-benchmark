@@ -7,5 +7,5 @@ test:
 benchmark:
 	go test -bench=.  ./... -run='^#'
 clean:
-	rm -fv $(bin)
-.phony: clean test
+	rm -rfv $(bin) out/
+.phony: clean test 

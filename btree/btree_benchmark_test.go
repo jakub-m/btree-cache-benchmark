@@ -25,7 +25,7 @@ func init() {
 	sequenceTypes = []string{
 		sequenceTypeRange,
 		sequenceTypeShuffledRange,
-		sequenceTypeRandom,
+		// sequenceTypeRandom,
 	}
 }
 
