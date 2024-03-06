@@ -1,0 +1,17 @@
+?   	btree-cache-benchmark	[no test files]
+goos: darwin
+goarch: arm64
+pkg: btree-cache-benchmark/btree
+BenchmarkInsert/n:100000_order:2_seq:range-12         	      16	  67559133 ns/op
+BenchmarkInsert/n:100000_order:2_seq:shuffledRange-12 	       6	 173370104 ns/op
+BenchmarkInsert/n:100000_order:3_seq:range-12         	      30	  39785504 ns/op
+BenchmarkInsert/n:100000_order:3_seq:shuffledRange-12 	      24	  46744846 ns/op
+BenchmarkInsert/n:100000_order:6_seq:range-12         	      49	  23903752 ns/op
+BenchmarkInsert/n:100000_order:6_seq:shuffledRange-12 	      42	  27978768 ns/op
+BenchmarkInsert/n:100000_order:10_seq:range-12        	      68	  17983414 ns/op
+BenchmarkInsert/n:100000_order:10_seq:shuffledRange-12         	      51	  21741365 ns/op
+BenchmarkInsert/n:100000_order:23_seq:range-12                 	      97	  12706358 ns/op
+BenchmarkInsert/n:100000_order:23_seq:shuffledRange-12         	      75	  16396315 ns/op
+PASS
+ok  	btree-cache-benchmark/btree	14.381s
+?   	btree-cache-benchmark/utils	[no test files]

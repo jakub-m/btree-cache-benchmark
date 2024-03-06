@@ -5,7 +5,7 @@ $(bin): $(gofiles)
 test:
 	go test -tags assertions ./...
 benchmark:
-	go test -bench=.  ./... -run='^#'
+	go test -bench=.  ./... -run='^#' | tee benchmark.log
 clean:
 	rm -rfv $(bin) out/
 .phony: clean test 
