@@ -7,9 +7,7 @@ I read [this interesting article][ref_art] about choosing primary keys (PK) in P
 Back when I worked in Amazon I recall a tech talk that mentioned that using a UUID keys instead of serial keys causes performance drops for databases
 that use B-tree, because insertions of UUID to a B-tree are less cache-friendly than inserting serial integers.
 
-I wanted to explore that further. I implemented a B-tree and run some benchmarks. While I can measure performance directly (with [Go benchmark][ref_go_bench]), I wanted also to somehow measure "cache friendliness". To measure cache friendliness, I counted time when a node of the B-tree was last accessed (where "time" is just a tick of a counter). If a node is accessed more frequently (less "ticks" between the accesses), there is a larger chance that the node is cached. The more "ticks" between the subsequent accesses of the mode, the more chance the node was evicted from the cache.
-
-The "experiment" is very rough and the implementation is far from perfect.
+I decided to explore the topic further, so I implemented a B-tree and run some benchmarks. I could measure the performance directly (with [Go benchmark][ref_go_bench]), I wanted also to somehow measure "cache friendliness". To measure **cache friendliness**, I checked times when a node of the B-tree was last accessed, where the "time" is just a tick of an integer counter. The intuition behind the measurement is that when a node is accessed more frequently (less "ticks" between the accesses), there is a larger chance that the node is still in cache. The more "ticks" between the subsequent accesses of the mode, the more chance the node was evicted from the cache. The less "ticks" between the accesses of the nodes overall, the structure (or the insert pattern) is more cache-friendly.
 
 [ref_go_bench]: https://pkg.go.dev/testing#hdr-Benchmarks
 [ref_btree]: https://en.wikipedia.org/wiki/B-tree#Insertion
@@ -17,27 +15,27 @@ The "experiment" is very rough and the implementation is far from perfect.
 
 # Performance
 
-First I compared insertion of a sequence of integers, versus inserting the same sequence but in a random order (shuffled). Inserting shuffled sequence should somehow emulate the scenario when one inserts UUID that is later hashed to an integer key.
+The [original article][ref_art] mentions inserting UUIDs. My simplistic B-tree implementation does not support UUIDs, just ints, so I compared insertion of an increasing sequence of integers and a shuffled sequence of integers. The assumption here is that the shuffled sequence would emulate how semi-random UUID (or a hash of it) is inserted to the tree.
 
-The table summarises the time it takes to insert 100k keys to B-trees of different B-tree order. The "relative time" is the time it takes to insert the shuffled sequence `t_shuf` compared to time it takes to insert the straight sequence `t_seq`:
+The table summarises the time it takes to insert 100k keys to B-trees of different B-tree order. The "degradation" is the time it takes to insert the shuffled sequence `t_shuf` compared to time it takes to insert the straight sequence `t_seq`:
 
 ```
-t_relative = t_shuf/t_seq - 1
+degradation = (time for shuffled sequence) / (time for straight equence) - 1
 ```
 
-The larger relative time, the more performance degradation when inserting the shuffled sequence.
+| btree order | degradation |
+| ----------- | ----------- |
+| 2           | 156.6%      |
+| 3           | 17.5%       |
+| 6           | 17.0%       |
+| 10          | 20.9%       |
+| 23          | 29.0%       |
 
-| btree order | relative time (degradation) |
-| ----------- | --------------------------- |
-| 2           | 156.6%                      |
-| 3           | 17.5%                       |
-| 6           | 17.0%                       |
-| 10          | 20.9%                       |
-| 23          | 29.0%                       |
+Apart of the tree of order of 2 (a binary tree), the performance is consistently ~20% worse for insertion of the shuffled sequence. The order of B-tree is the number of child nodes per internal node. [Postgres docs do not say][ref_pg_docs] what is the order of its B-trees, and even if it's constant.
 
-Apart of the tree of order of 2 (a binary tree), the performance is consistently ~20% worse for insertion of the shuffled sequence.
+[ref_pg_docs]: https://www.postgresql.org/docs/current/btree-implementation.html#BTREE-STRUCTURE
 
-# TODO cache friendlieness
+# Cache friendliness
 
 # TODO to check
 
