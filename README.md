@@ -37,6 +37,22 @@ Apart of the tree of order of 2 (a binary tree), the performance is consistently
 
 # Cache friendliness
 
+Looking at node access times should tell how cache friendly is the insert sequence. The less time between accesses of the nodes, the more is the chance that the node still sits in the cache.
+
+Here are the histograms comparing node access times for a straight sequence and a shuffled sequence. What's apparent is that for the shuffled sequence, there is a long tail of accesses with large access times.
+
+![img](img/hist_ticks_all.png)
+
+Zoomed:
+
+![img](img/hist_ticks_zoomed.png)
+
+The blue bars on the very left show that most of the nodes were accessed with 2000 "ticks". This means that if only the cache can hold 2000 nodes, the nodes won't be evicted from the cache. On the other hand, the orange line shows that there are many nodes that are accessed infrequently, so, intuitively, the chance of cache eviction is higher.
+
+How many?
+
+For the straight sequence, 96% of the accesses happen within 100 ticks, and 99.9% accesses happen within 2,000 ticks. On the other hand, for the shuffled sequence, 47% accesses happen within 100 ticks, 63% within 2,000 and 83% within 100,000 ticks.
+
 # TODO to check
 
-- Check if there is a "sharp drop" of performance. Check the benchmarks while increasing n from 1000 to 1M, assume 2MB cache will kick
+- TODO Check if there is a "sharp drop" of performance. Check the benchmarks while increasing n from 1000 to 1M, assume 2MB cache will kick
