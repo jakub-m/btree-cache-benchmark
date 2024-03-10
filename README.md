@@ -1,6 +1,8 @@
 # Comparing performance of sequential and random insertions to a B-tree
 
-I read [this interesting article][ref_art] about choosing primary keys (PK) in Postgres. The article mentions that using UUID as PK causes performance drop w.r.t. to sequential integer PK:
+I read [this interesting article][ref_art] about choosing primary keys (PK) in Postgres. The article mentions that using UUID as PK causes performance drop w.r.t. to a [serial][ref_serial] (autoincrementing integer) PK:
+
+[ref_serial]: https://www.postgresql.org/docs/current/datatype-numeric.html
 
 > [...] when you use Postgres native UUID v4 type instead of bigserial table size grows by 25% and insert rate drops to 25% of bigserial.
 
@@ -15,12 +17,12 @@ I decided to explore the topic further, so I implemented a B-tree and run some b
 
 # Performance
 
-The [original article][ref_art] mentions inserting UUIDs. My simplistic B-tree implementation does not support UUIDs, just ints, so I compared insertion of an increasing sequence of integers and a shuffled sequence of integers. The assumption here is that the shuffled sequence would emulate how semi-random UUID (or a hash of it) is inserted to the tree.
+The [original article][ref_art] mentions inserting UUIDs. My simplistic B-tree implementation does not support UUIDs, so I compared insertion of a serial type (an incrementing sequence of integers) and a shuffled sequence of integers. The assumption here is that the shuffled sequence would emulate how semi-random UUID (or a hash of it) is inserted to the tree.
 
-The table summarises the time it takes to insert 100k keys to B-trees of different B-tree order. The "degradation" is the time it takes to insert the shuffled sequence `t_shuf` compared to time it takes to insert the straight sequence `t_seq`:
+The table summaries the time it takes to insert 100k keys to B-trees of different B-tree order. The "degradation" is the time it takes to insert the shuffled sequence `t_shuf` compared to time it takes to insert the straight sequence `t_seq`:
 
 ```
-degradation = (time for shuffled sequence) / (time for straight equence) - 1
+degradation = (time for shuffled sequence) / (time for straight sequence) - 1
 ```
 
 | btree order | degradation |
@@ -53,6 +55,6 @@ How many?
 
 For the straight sequence, 96% of the accesses happen within 100 ticks, and 99.9% accesses happen within 2,000 ticks. On the other hand, for the shuffled sequence, 47% accesses happen within 100 ticks, 63% within 2,000 and 83% within 100,000 ticks.
 
-# TODO to check
+# Takeaways
 
-- TODO Check if there is a "sharp drop" of performance. Check the benchmarks while increasing n from 1000 to 1M, assume 2MB cache will kick
+Using a primary key that results in random accesses to B-tree might degrade performance, w.r.t serial primary key.
