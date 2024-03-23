@@ -31,8 +31,9 @@ type Btree[K cmp.Ordered, V any] struct {
 	// The maximum number of child nodes of a node.
 	order int
 	// either innerNode or leafNode
-	root          node[K, V]
-	accessCounter accessCounter
+	root             node[K, V]
+	accessCounter    accessCounter
+	rebalanceCounter rebalanceCounter
 }
 
 // node per Knuth (wiki, m is order):
@@ -68,16 +69,23 @@ type node[K cmp.Ordered, V any] interface {
 ////////////////////////////////////////
 
 func New[K ~int, V any](order int) *Btree[K, V] {
-	return NewWithAccessCounter[K, V](order, dummyAccessCounter)
-}
-
-func NewWithAccessCounter[K ~int, V any](order int, ac accessCounter) *Btree[K, V] {
+	ac := dummyAccessCounter
 	root := newLeafNode[K, V](ac)
 	return &Btree[K, V]{
 		order:         order,
 		root:          root,
 		accessCounter: ac,
 	}
+}
+
+// SetAccessCounter must be called right after New.
+func (b *Btree[K, V]) SetAccessCounter(ac accessCounter) {
+	b.accessCounter = ac
+	b.root.(*leafNode[K, V]).accessCounter = ac
+}
+
+func (b *Btree[K, V]) SetRebalanceCounter(rc rebalanceCounter) {
+	b.rebalanceCounter = rc
 }
 
 func (b *Btree[K, V]) Find(key K) (V, bool) {
@@ -104,6 +112,9 @@ func (b *Btree[K, V]) Insert(key K, value V) {
 
 // replaceNodeWithTwoNodesAndSeparatorRec does not care about order. Optionally, returns new root node.
 func (b *Btree[K, V]) replaceNodeWithTwoNodesAndSeparatorRec(childToRemove, left, right node[K, V], separator K) *innerNode[K, V] {
+	if b.rebalanceCounter != nil {
+		b.rebalanceCounter()
+	}
 	parent := childToRemove.getParent()
 	if parent == nil {
 		newParent := &innerNode[K, V]{
@@ -408,5 +419,8 @@ func (s pairSlice[K, V]) bisect(key K) int {
 
 // accessCounter is used to inform that a particular node was accessed for sake of profiling.
 type accessCounter func(n any)
+
+// rebalanceCounter counts number of re-balances of the nodes.
+type rebalanceCounter func()
 
 func dummyAccessCounter(n any) {}

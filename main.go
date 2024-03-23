@@ -24,7 +24,8 @@ func main() {
 		lastAccess: make(map[any]int),
 		hist:       make(map[int]int),
 	}
-	b := btree.NewWithAccessCounter[int, int](flagOrder, ac.count)
+	b := btree.New[int, int](flagOrder)
+	b.SetAccessCounter(ac.count)
 	var values []int
 	summary := "#"
 	summary += fmt.Sprint(" n=", flagN)
